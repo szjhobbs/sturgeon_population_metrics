@@ -1,0 +1,69 @@
+---
+
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_knit$set(root.dir = "~/RProjects/SturgeonPopMetrics")
+knitr::opts_chunk$set(echo = FALSE)
+
+```
+
+```{r libraries}
+
+# library()
+
+```
+
+```{r load-data}
+
+AltAbund <- readRDS(file = "abundance/AltAbund.rds")
+Petersen <- readRDS(file = "abundance/Petersen.rds")
+
+
+```
+
+```{r somevars}
+
+
+
+
+```
+
+```{r}
+
+Petersen <- within(data = Petersen, expr = {
+  
+  Abund <- (NumTagged * (FinalC + 1)) / (Recap + 1)
+  
+})
+
+
+alt_n <- with(data = AltAbund$Abundance, expr = {
+  
+  b <- LenCat == "leg"
+  
+  N[b]
+  
+})
+
+
+```
+
+```{r}
+
+Petersen$AltN <- c(rep(NA, times = 18), alt_n)
+
+
+
+```
+
+```{r}
+
+xlsx::write.xlsx(Petersen, file = "abundance/test.xlsx", showNA = FALSE)
+
+
+```
+
+
+

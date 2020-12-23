@@ -1,0 +1,464 @@
+---
+title: "White Sturgeon Age-15 Abundance Estimates"
+author: "California Department of Fish and Wildlife"
+date: "April 19, 2016"
+output: html_document
+---
+
+```{r File Paths and Libraries, echo=FALSE, warning=FALSE}
+
+# file paths for absolute reference to source code and data connection
+data_dir <- "C:/Data/jdubois/RDataConnections/Sturgeon/"
+
+# load libraries as needed
+library(ggplot2)
+library(knitr)
+# library(htmlwidgets)
+# library(DT)
+#library(reshape2)
+#library(scales)
+
+```
+
+```{r Data, echo=FALSE, warning=FALSE, results='hide', message=FALSE, cache=TRUE}
+
+source(file = paste0(data_dir, "OtherData.R"), echo = TRUE)
+source(file = paste0(data_dir, "TaggingData.R"), echo = TRUE)
+
+# load .rds abundance data (NOTE: .rds file is saved in Analysis-AltAbundance,
+# so run code therein to refresh this .rds file - last refreshed 15-Apr-2016)
+AltAbundance <- readRDS("AltAbund.rds")
+
+```
+
+```{r Source Code, echo=FALSE, warning=FALSE, message=FALSE}
+
+# the source directory
+source_dir <- "C:/Data/jdubois/RSourcedCode"
+
+# sources needed functions and methods
+source(file = paste(source_dir, "methods_len_freq.R", sep = "/"))
+source(file = paste(source_dir, "methods_age_freq.R", sep = "/"))
+source(file = paste(source_dir, "functions_global_data_subset.R", sep = "/"))
+source(file = "source_stu_abund_age.R")
+
+# some cleanup
+rm(data_dir, source_dir)
+
+```
+
+```{r Variables, echo=FALSE}
+
+# establish l-f breaks for WSTALKEY; note this alk uses TL not FL
+#wst_alkey_breaks <- c(seq(from = 21, to = 186, by = 5), Inf)
+wst_alkey_breaks <- c(wst_alkey$Bins, Inf)
+
+```
+
+### Background
+
+The abundance of age-15 White Sturgeon is a key metric in the CPVIA's doubling goal. Historically, we (California Department of Fish and Wildlife, CDFW) have estimated age-15 abundance using mark-recapture data and the fraction of age-15 fish as calculated using an extant age-length key.
+
+Herein we present age-15 White Sturgeon abundance using:
+
+* Estimates of abundance using harvest and harvest rate  
+* More recent age-length data (from US Fish and Wildlife Service, USFWS)  
+
+### Methods & Results
+
+We obtained length frequency distributions for White Sturgeon ≥ 85 cm TL from 2007-2014 (Fig. 1). (Minimum length of 85 cm TL set per investigations cited [here](https://nrm.dfg.ca.gov/FileHandler.ashx?DocumentId=114809).) Using age-length keys from CDFW (extant key) and one produced from recently-collected (~2014) USFWS age-length data, we obtained age frequency distributions for the same period (Fig. 2).
+
+We estimated overall abundance (N) for White Sturgeon by summing the sub-legal (sub), legal (leg), and over-legal (ovr) abundance estimates as calculated per [CDFW unpublished](../Analysis-AltAbundance/StuAltAbundance.html). Using the fraction of age-15 White Sturgeon (AF~15~, as provided by the age frequency distributions), we calculated the abundance of age-15 fish (N~15~) using the equation below.  
+
+${N}_{15} = {N}*{AF}_{15}$  
+
+### Figures & Tabular Data
+
+```{r LF Dist, echo=FALSE}
+
+# NOTE: subsetting on >= 85 cm TL for use in getting at age-15 abundance. Alt
+# abundance currently calculated using minimum WST length of >= 85 cm TL
+
+# get length frequency distribution (from 2007-2014 in harmony with available 
+# alt abundance estimates as of 19-Apr-2016); including only WST >= 85 cm TL & 
+# *not* including recaptured WST (for now, this includes fish recorded as 
+# shedding tag)
+wst_lf_85 <- GetLenFreq(
+  dat = SturgeonAll,
+  colX = TL,
+  by = "RelYear",
+  breaks = wst_alkey_breaks,
+  #seqBy = 5,
+  intBins = TRUE,
+  subset = Species %in% "White" &
+    RelYear %in% 2007:2014 & TL >= 85 &
+    # below removes recaptured WST
+    StuType %in% c("Tag", "NoTag")
+)
+
+# to compare abundance at age-15 when calculated using >= 85 cm TL sized fish or
+# when using (as in this section) fish within the current slot limit
+
+# get lf dist for fish within slot (117-168 cm TL)
+wst_lf_slot <- GetLenFreq(
+  dat = SturgeonAll,
+  colX = TL,
+  by = "RelYear",
+  breaks = wst_alkey_breaks,
+  #seqBy = 5,
+  intBins = TRUE,
+  subset = Species %in% "White" &
+    RelYear %in% 2007:2014 & TL %in% 117:168 &
+    # below removes recaptured WST
+    StuType %in% c("Tag", "NoTag")
+)
+
+```
+
+```{r LF Plot, echo=FALSE, warning=FALSE, fig.height=8, fig.width=6, fig.cap="Fig. 1 White Sturgeon length frequency distributions 2007-2014. Length data from CDFW mark-recapture study. Blue vertical bar indicates median length. Length bins by 5 cm."}
+
+# converting to factor for order when plotting
+wst_lf_85$Data$LenCat <- factor(
+  wst_lf_85$Data$LenCat,
+  levels = c("sub", "leg", "ovr")
+)
+
+# plots length frequency distribution 2007-2014
+plot(
+  lf = wst_lf_85,
+  lens = TL,
+  fillBar = LenCat,
+  type = "POT",
+  addMed = TRUE,
+  addN = TRUE
+) + 
+  facet_grid(facets = RelYear ~ .) +
+  coord_cartesian(xlim = c(81, 186)) +
+  scale_fill_manual(
+    name = "",
+    values = c(sub = "grey50", leg= "black", ovr = "steelblue")
+  ) +
+  xlab("Length bins (cm TL)") +
+  theme_stu_lf
+
+```
+
+<br><br>
+
+```{r Make ALKey, echo=FALSE}
+
+# in this section we create an age-length key from USFWS data
+wst_alk_usfws <- MakeALKey(
+  dat = wst_usfws_age_len,
+  len = TotalLength,
+  age = Age,
+  lenBreaks = wst_lf_85$Breaks,
+  breakLabs = wst_lf_85$Bins,
+  dia = FALSE
+)
+
+# convert wst_alk_usfws bins to integer for analytics to follow
+wst_alk_usfws$Bins <- as.integer(as.character(wst_alk_usfws$Bins))
+
+# confirm (if necessary)
+# typeof(wst_alk_usfws$Bins)
+
+```
+
+```{r AF Dist, echo=FALSE}
+
+# using different al keys get age frequency distribution for WST; for this
+# purpose we get proportions of total (by year) for each age rather than count
+
+# age frequency using extant CDFW age-length key
+wst_af_cdfw <- GetAgeFreq(
+  lfTable = wst_lf_85$Freq,
+  alk = wst_alkey,
+  prop = TRUE
+)
+
+# reshape for rbind()ing below (for now it seemed that reshaping was the best &
+# quickest solutions for creating plot comparing af dist from these 2 al keys)
+wst_af_cdfw_melt <- reshape2::melt(
+  wst_af_cdfw,
+  id.vars = "RelYear",
+  variable.name = "Age",
+  value.name = "Freq"
+)
+
+# adding source column for identity
+wst_af_cdfw_melt$Source <- "CDFW"
+
+# age frequency using 2014(?) USFWS age-length key
+wst_af_usfws <- GetAgeFreq(
+  lfTable = wst_lf_85$Freq,
+  alk = wst_alk_usfws,
+  prop = TRUE
+)
+
+# reshape for rbind()ing below
+wst_af_usfws_melt <- reshape2::melt(
+  wst_af_usfws,
+  id.vars = "RelYear",
+  variable.name = "Age",
+  value.name = "Freq"
+)
+
+# adding source column for identity
+wst_af_usfws_melt$Source <- "USFWS"
+
+# age frequency using extant CDFW age-length key
+wst_af_cdfw_slot <- GetAgeFreq(
+  lfTable = wst_lf_slot$Freq,
+  alk = wst_alkey,
+  prop = TRUE
+)
+
+# reshape for rbind()ing below (for now it seemed that reshaping was the best &
+# quickest solutions for creating plot comparing af dist from these 2 al keys)
+wst_af_cdfw_slot_melt <- reshape2::melt(
+  wst_af_cdfw_slot,
+  id.vars = "RelYear",
+  variable.name = "Age",
+  value.name = "Freq"
+)
+
+# adding source column for identity
+wst_af_cdfw_slot_melt$Source <- "CDFW"
+
+# age frequency using data collected by USFWS
+wst_af_usfws_slot <- GetAgeFreq(
+  lfTable = wst_lf_slot$Freq,
+  alk = wst_alk_usfws,
+  prop = TRUE
+)
+
+# reshape for rbind()ing below
+wst_af_usfws_slot_melt <- reshape2::melt(
+  wst_af_usfws_slot,
+  id.vars = "RelYear",
+  variable.name = "Age",
+  value.name = "Freq"
+)
+
+# adding source column for identity
+wst_af_usfws_slot_melt$Source <- "USFWS"
+
+# combine for plotting
+wst_af <- rbind(wst_af_cdfw_melt, wst_af_usfws_melt)
+wst_af_slot <- rbind(wst_af_cdfw_slot_melt, wst_af_usfws_slot_melt)
+
+# clean up
+rm(
+  wst_af_cdfw_melt,
+  wst_af_usfws_melt,
+  wst_af_cdfw_slot_melt,
+  wst_af_usfws_slot_melt
+)
+
+```
+
+```{r AF Plot, echo=FALSE, fig.height=6, fig.width=8, fig.cap="Fig 2. White Sturgeon age frequency distributions 2007-2014 using two separate age-length keys - for fish >= 85 cm TL"}
+
+# head(wst_af)
+
+# converting for ease of displaying x-axis ticks
+wst_af$Age <- as.numeric(as.character(wst_af$Age))
+
+# ifelse(test = wst_af$Age %in% 15, yes = "red", no = "black")
+
+# display age frequency distribution
+ggplot(data = wst_af, mapping = aes(x = Age, y = Freq)) +
+  # geom_bar(stat = "identity", fill = "black") +
+  geom_bar(
+    stat = "identity",
+    fill = "black"
+  ) +
+  facet_grid(RelYear ~ Source) +
+  scale_x_continuous(
+    minor_breaks = seq(from = 0, to = 23, by = 1),
+    expand = c(0.01, 0)
+  ) +
+  ylab("Fraction of total") +
+  theme_stu_lf
+
+```
+
+<br>
+
+```{r AF Plot2, echo=FALSE, fig.height=6, fig.width=8, fig.cap="Fig 3. White Sturgeon age frequency distributions 2007-2014 using two separate age-length keys - for slot sized fish only"}
+
+# converting for ease of displaying x-axis ticks
+wst_af_slot$Age <- as.numeric(as.character(wst_af_slot$Age))
+
+# display age frequency distribution
+ggplot( data = wst_af_slot, mapping = aes(x = Age, y = Freq)) +
+  # geom_bar(stat = "identity", fill = "black") +
+  geom_bar(
+    stat = "identity",
+    fill = "black"
+  ) +
+  facet_grid(RelYear ~ Source) +
+  scale_x_continuous(
+    minor_breaks = seq(from = 0, to = 23, by = 1),
+    expand = c(0.01, 0)
+  ) +
+  ylab("Fraction of total") +
+  theme_stu_lf
+
+```
+
+```{r Abund Age, echo=FALSE}
+
+# AltAbundance
+
+# get overall N (sub + leg + ovr)
+annual_abun <- aggregate(
+  formula = N ~ Year,
+  data = AltAbundance,
+  FUN = sum
+)
+
+# abundance for age 15 using cdfw af
+abund_15_cdfw <- GetAbunAtAge(
+  abun = annual_abun,
+  af = wst_af_cdfw,
+  age = 15
+)
+
+abund_15_cdfw$Source <- "CDFW"
+abund_15_cdfw$Cat <- "all"
+
+# abundance for age 15 using usfws af
+abund_15_usfws <- GetAbunAtAge(
+  abun = annual_abun,
+  af = wst_af_usfws,
+  age = 15
+)
+
+abund_15_usfws$Source <- "USFWS"
+abund_15_usfws$Cat <- "all"
+
+# age-15 abundance using slot-sized fish & CDFW age-length key
+abund_15_slot_cdfw <- GetAbunAtAge(
+  abun = AltAbundance[AltAbundance$LenCat %in% "leg", c("Year", "N")],
+  af = wst_af_cdfw_slot,
+  age = 15
+)
+
+abund_15_slot_cdfw$Source <- "CDFW"
+abund_15_slot_cdfw$Cat <- "slot"
+
+# age-15 abundance using slot-sized fish & USFWS age-length key
+abund_15_slot_usfws <- GetAbunAtAge(
+  abun = AltAbundance[AltAbundance$LenCat %in% "leg", c("Year", "N")],
+  af = wst_af_usfws_slot,
+  age = 15
+)
+abund_15_slot_usfws$Source <- "USFWS"
+abund_15_slot_usfws$Cat <- "slot"
+
+# combine for ease of plotting
+abund_15 <- rbind(
+  abund_15_cdfw,
+  abund_15_usfws,
+  abund_15_slot_cdfw[!is.na(abund_15_slot_cdfw$n_Age15), ],
+  abund_15_slot_usfws[!is.na(abund_15_slot_usfws$n_Age15), ]
+)
+
+```
+
+<br><br>
+
+<caption>
+  Tabular display of White Sturgeon age-15 abundance (CDFW - top 2, USFWS - bottom 2). Fraction data from age-length frequency distributions. (all = using fish ≥ 85 cm TL; slot = using fish 117-168 cm TL)
+</caption>
+
+```{r Tab Abund, echo=FALSE}
+
+col_name_display <- c(
+  "Year", "N (Total)",
+  "Fraction", "N (Age 15)",
+  "Length Category"
+)
+# capt <- "Age 15 abundance using %s age-length data"
+
+# display tabular age-15 abundance
+kable(
+  abund_15_cdfw[ , -5],
+  format = "markdown",
+  row.names = FALSE,
+  # padding = 5,
+  col.names = col_name_display#,
+  # caption = sprintf(capt, "CDFW")#,
+  # format.args = list(big.mark = ',')
+)
+
+kable(
+  abund_15_slot_cdfw[!is.na(abund_15_slot_cdfw$n_Age15), -5],
+  format = "markdown",
+  row.names = FALSE,
+  # padding = 5,
+  col.names = col_name_display#,
+  # caption = sprintf(capt, "CDFW")#,
+  # format.args = list(big.mark = ',')
+)
+
+kable(
+  abund_15_usfws[ , -5],
+  format = "markdown",
+  row.names = FALSE,
+  col.names = col_name_display#,
+  # caption = sprintf(capt, "USFWS")
+)
+
+kable(
+  abund_15_slot_usfws[!is.na(abund_15_slot_usfws$n_Age15), -5],
+  format = "markdown",
+  row.names = FALSE,
+  col.names = col_name_display#,
+  # caption = sprintf(capt, "USFWS")
+)
+
+```
+
+<br>
+
+```{r Plot Abun, echo=FALSE, fig.height=6, fig.width=8, fig.cap="Fig 4. White Sturgeon age-15 abundance 2007-2014 calculated from two different age-length sources"}
+
+ggplot(
+  data = abund_15,
+  mapping = aes(
+    x = as.character(Year),
+    y = n_Age15
+  )
+) +
+  geom_bar(
+    mapping = aes(fill = Cat),
+    stat = "identity",
+    position = "dodge"
+  ) +
+  scale_y_continuous(
+    labels = function(x) x / 1000,
+    expand = c(0.01, 0)
+  ) +
+  scale_x_discrete(
+    expand = c(0.01, 0)
+  ) + 
+  scale_fill_manual(
+    name = "",
+    values = c(all = "black", slot = "grey50")
+  ) +
+  labs(
+    x = "Year",
+    y = "Abundance - Age 15 (x 1000)"
+  ) +
+  facet_grid(facets = . ~ Source) +
+  theme_stu_lf
+
+```
+
+<a href="#top">back to top</a>  
+***  
+Report ran: `r Sys.time()`  
+End of report

@@ -1,0 +1,235 @@
+---
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_knit$set(
+  root.dir = "~/RProjects/SturgeonPopMetrics/",
+  global.par = TRUE
+)
+
+```
+
+```{r global-par}
+
+par(
+  mar = c(2.75, 2.5, 1.5, 0.5),
+  oma = c(0.5, 0.5, 0.5, 0.5),
+  mgp = c(1.75, 0.5, 0)
+)
+
+```
+
+```{r load-data}
+
+# SB's data from 'size_selective_data.xlsx', tab 'Fl'; changing column names to
+# remove inported prefixed 'X', though not sure it matters for this excercise
+sbdata <- read.csv(file = "model/SBData.csv", header = TRUE)
+colnames(sbdata) <- c("FL", 6:8)
+
+```
+
+```{r variables}
+
+# could use either; S. Blackburn rounded to one decimal
+# msize <- c(6, 7, 8) * 2.54
+msize <- c(15.2, 17.8, 20.3)
+
+# represents fishing power of net by mesh size (8" mesh fished at twice the
+# effort as typical net config is 8"-6"-7"-8")
+rpwr <- c(1, 1, 2)
+
+```
+
+## Starting Values
+
+starting values for net fit model
+
+```{r starting-values}
+
+# SB's starting values (X0) for gear selectivity model; origin unknown & I am
+# not sure these values make sense based on length-frequency modes; starting
+# values I thought should be based somewhat on existing data; find these values
+# in file 'SELECT.R' from SB
+X00 <- c(40, 6, 10, 10, 1)
+
+# using functions developed in `spopmodel` to get starting values for comparison
+# to SB's; here we select values for the 'binorm.sca' model
+X01 <- spopmodel:::GetX0(
+  svals = spopmodel:::StartVals(
+    len = spopmodel::trammel_catch[["FL"]],
+    mesh = spopmodel::trammel_catch[["MeshSize"]]
+  )
+)[["binorm.sca"]]
+
+# could try other starting values: somewhat arbitrary based on lf distribution
+# X01 <- c(75, 15.5, 140, 20.5, 0.62)
+
+```
+
+Display of starting values generated from average of modes by mesh size. Values are markedly different from those used by SB.
+
+```{r display-sbX01}
+
+X01
+
+```
+
+## Model Fit
+
+Note: SB used default for net fishing strength, which assumes equal effort.
+
+```{r model-fit}
+
+# use Millar's NetFit function to apply 'binorm.sca' model to data; SB chose
+# 'binorm.sca' for the sturgeon model; gear selectivity model with lowest
+# deviance is often the one chosen
+fit0 <- spopmodel:::NetFit(
+  Data = sbdata,
+  Meshsize = msize,
+  x0 = X00, 
+  rtype = "binorm.sca"
+)
+
+# same model but now using different starting values + relative power of 1, 1, 2
+fit1 <- spopmodel:::NetFit(
+  Data = sbdata,
+  Meshsize = msize,
+  x0 = X01, 
+  rtype = "binorm.sca", 
+  rel.power = rpwr
+)
+
+# interestingly, below does not work when including un-equal effort, well it
+# works but results are head scratching (e.g., large negative deviance)
+fit0_rpwr <- spopmodel:::NetFit(
+  Data = sbdata,
+  Meshsize = msize,
+  x0 = X00, 
+  rtype = "binorm.sca", 
+  rel.power = rpwr
+)
+
+```
+
+```{r rel-retention}
+
+# get relative retention from model fit; will standardize in next chunk
+rr0 <- spopmodel::RelativeRetention(fit0, standardize = FALSE)
+rr1 <- spopmodel::RelativeRetention(fit1, standardize = FALSE)
+
+```
+
+```{r rr-standardized}
+
+# for standardization summing relative retention by length bin & then dividing
+# by max value (method used by SB)
+rr0_tot <- rowSums(rr0[["Data"]][2:4])
+rr1_tot <- rowSums(rr1[["Data"]][2:4])
+
+# to compare relative retention values using different arguments supplied to
+# NetFit()
+rr0_stand <- rr0_tot / max(rr0_tot)
+rr1_stand <- rr1_tot / max(rr1_tot)
+
+```
+
+```{r plot-rel-retention}
+
+# for x-values commonly used for line plotting
+xx <- rr0[["Data"]][["FL"]]
+
+# for line size & colors
+lwd <- 4L
+col0 <- adjustcolor(col = "steelblue", alpha.f = 0.5)
+col1 <- adjustcolor(col = "orange2", alpha.f = 0.5)
+
+plot(
+  x = xx,
+  y = seq(from = 0, to = 1, length.out = 34),
+  type = "n",
+  xlab = "FL bin",
+  ylab = "Relative retention"
+)
+
+lines(
+  x = xx,
+  y = rr0_stand,
+  col = col0,
+  lwd = lwd
+)
+
+lines(
+  x = xx,
+  y = rr1_stand,
+  col = col1,
+  lwd = lwd
+)
+
+legend(
+  x = max(xx),
+  y = 1.15,
+  legend = c("SB", "Alt"),
+  col = c(col0, col1), 
+  lwd = lwd,
+  xpd = TRUE,
+  xjust = 1, 
+  ncol = 2,
+  bty = "n"
+)
+
+```
+
+Now adjust catch using relative retention values, and then plot. Grey line is raw length frequency distribution (i.e., no gear selectivity applied).
+
+```{r plot-adj-catch}
+
+colNoAdj <- adjustcolor(col = "grey50", alpha.f = 0.5)
+
+plot(
+  x = range(xx),
+  y = c(0, 212),
+  type = "n",
+  xlab = "FL bin", 
+  ylab = "Count"
+)
+
+lines(
+  x = xx,
+  y = rowSums(rr0[["Freq"]] / rr0_stand),
+  col = col0,
+  lwd = lwd
+)
+
+lines(
+  x = xx,
+  y = rowSums(rr1[["Freq"]] / rr1_stand),
+  col = col1,
+  lwd = lwd
+)
+
+lines(
+  x = xx,
+  y = rowSums(sbdata[2:4]),
+  col = colNoAdj,
+  lwd = lwd
+)
+
+legend(
+  x = max(xx),
+  y = 245,
+  legend = c("SB", "Alt", "NoAdj"),
+  col = c(col0, col1, colNoAdj), 
+  lwd = lwd,
+  xpd = TRUE,
+  xjust = 1, 
+  ncol = 3,
+  bty = "n"
+)
+
+```
+
+---
+CDFW Sportfish  
+`r Sys.Date()`

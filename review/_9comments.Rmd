@@ -1,0 +1,86 @@
+---
+
+---
+
+<!-- recommendations & comments -->
+
+```{r setup9, include=FALSE}
+
+knitr::opts_knit$set(root.dir = "~/RProjects/SturgeonPopMetrics/")
+
+```
+
+## Recommendations
+
+Herein, we outline recommendations for consideration. We feel such recommendations (1) provide a clear path forward for the `Adult Sturgeon Population Estimates` study, (2) establish and ensure robustness in data collection and analytics, and (3) offer novel opportunities to further our understanding of California-based sturgeon.
+
+Sections `Sampling` and `Analytics` offer the most detail. We considered analytics from an operational standpoint. That is, analytics (and outcome) that could possibly improve sampling and (or) population metrics.
+
+#### Population Metrics
+
+Because we have not done so recently, calculate and then disseminate important population metrics (e.g., absolute abundance; harvest rate; survival rate). Provide detailed metadata and caveats as appropriate.
+
+<!-- annual calculation of population metrics (with more rigor) -->
+<!-- - produce & disseminate metrics -->
+<!-- - provide some boundaries as to acceptable limits (e.g., harvest rate at 20%, is this OK? Is it panic time - shut down the fishery?) -->
+<!-- - what is acceptable annual harvest? is harvest rate needed now that we have harvest from Card data? -->
+
+<!-- - bay study can show us the strong year class, we have ~10 years until recruitment to the fishery - are there temporary measures to put in place to protect that year class? -->
+
+<!-- - how do we track a year class? -->
+
+#### Sampling
+
+- **Research Vessels**: currently, only one is available (R/V *New Alosa*). In absence of cost-benefit analyses of two vessels versus one, having two vessels affords covering more ground (e.g., simultaneously one could fish Suisun Bay and the other San Pablo Bay). An ideal vessel would have (1) low draft and low windage, (2) at least one hydraulic net reel, and (3) versatility (i.e., could be used for Striped Bass tagging or other projects).
+
+- **Period**: (trammel net) sample August in its entirety and possibly add November sampling as weather allows. We know from angler data, "the bite is on" late fall through spring. So November sampling may afford opportunity to increase catch (and November is typically a slower month for Stockton Bay Delta sampling).
+
+- **Location**: (trammel net) return efforts to sampling San Pablo Bay, particularly in August. Potentially, we could catch more Green Sturgeon and almost certainly we would increase bycatch, especially elasmobranchs.
+
+- **Longline**: resurrect the longline (setline) survey. In 1991 and then from 1995-2002, longline sampling provided CDFW important information on juvenile sturgeon [DuBois et al. -@dubois-et_al-2010]. Such information --- migration, habitat use, growth, and age (via fin ray sampling & examination) --- is as important today as it was then, maybe moreso. We propose for now continuing more-or-less with the original design: annual sampling, July-December. We will consult with veteran CDFW Vessel Mates and other sturgeon biologists about appropriate locations in which to deploy longlines, but previously lines were set between Rio Vista and San Pablo Bay, with some in the Napa River. With minor modifications for safety, the R/V *New Alosa* could be used for such purpose, requiring a crew of 4-5 (Vessel Mate, Fish & Wildlife Tech, plus science staff).
+
+- **South San Francisco Bay & Sloughs**: we propose broadening our geographic footprint. We know sturgeon inhabit these areas but do little to no monitoring therein. Such sampling would require consultation with veteran Vessel Mates, as we need to know how and where to safely deploy gear (e.g., trammel net; longline). We could gleen helpful information through short pilot studies, and possibly the R/V *New Alosa* could be used for such a purpose.
+
+- **Age & Sex**: collecting age and sex data is highly valueable. However, doing so --- at least on sturgeon --- can be invasive, labor intensive, and (or) detrimental to the fish. Identifying sex is nearly impossible unless the fish is (1) noticeably ripe and expressing milt or eggs or (2) dead such that dissection would be possible. Assigning age is possible through fin ray analysis, but such analysis is costly and imprecise. Plus, extracting a portion of the fin ray is invasive. We propose a targeted study on age-length relation. We have not yet worked through any details, but such a study would likely require additional staff to help with fin ray collecition and (or) analysis. Likely, we would collect samples during longline or trammel net operations to mitigate the need for additional resources.
+
+- **Girth & Weight**: we propose recording girth and weight for all sturgeon caught, irrespective of gear type. Girth is easy to measure, but weight may take some collective thinking to devise a safe, effecient, and effective method. This may require nominal one-time funds to purchase materials and staff time for fabrication. Ongoing, cost would be neglible, as we are already handling the fish.
+
+#### Analytics
+
+- **Research Vessels**: perform cost-benefit analysis on whether deploying two R/Vs improved overall catch and number of tags released. Further, examine if two vessels offset the reduction in effort (i.e., reduced soak times and net length to mitigate pinniped interations). We may conclude two vessels are better than one --- and inituitively it might appear so, but thus far we have not made any formal comparisons.
+
+- **Annual Sampling**: like our R/V recommendation, intuitively it might appear annual sampling is beneficial and needed, but here too we have not done any formal analytics. It is important to understand if we gained anything (e.g., improved population metrics; better understanding of the fishery) by sampling annually.
+
+- **Trammel Net Configuration**: To the best of our knowledge, we (Sportfish) have not evaluated the fishing gear (i.e., trammel net). Further investigation is needed to understand why in 1990 6" and 7" meshes were added, and then evaluate whether expressed assumptions (i.e., the "why") were met.
+
+- **Catch**: because catching and then tagging as many sturgeon as feasible is one of the main objectives, we should know under which conditions (e.g., ebb tide versus flood tide) fishing is optimal. 
+
+- **Disc Tags**: if we continue with external (visible) tags (discussed further in section `Mark-Recapture`), then we need to evaluate our current reward structure \$50-\$100-\$150. The ideal configuration achieves a balance between near-100% reporting and available budget.
+
+- **Harvest**: compare Report Card annual harvest with value estimated from mark-recapture data. It would be a good idea to check how well the values track.
+
+- **Population Model**: complete the user interface for Blackburn's -@blackburn-et-al-2019 population model. This will facilitate the model's application and our understanding of how input parameters affect output. We may use model output and its predictions as justfication to change current fishing regulations.
+
+- **Population Estimator**: we are employing the analytical expertise of Dr. Jereme Gaeta to evaluate the sensitivity of our population estimator [Ricker -@ricker-1975, eqn. 3.9] to the number sampling events and the number of catches per year. Furthermore, we are working with Dr. Gaeta to evaluate additional metrics to assess the effects of sampling regime on our ability to describe the White Sturgeon population. One example of an alternative metric we are exploring is the probability of recapture at age given varying sampling regimes. Future efforts will confront theoretical models developed by Dr. Gaeta with existing CDFW data to help inform the best sampling regime moving forward.
+
+- **Program MARK**: assess the utility of this computer program. From old files, it appears biologists attempted to make use of Program Mark, well known to mark-recapture researchers. It is not clear if such attempts were fruitful. Despite this program's steep learning curve, we feel it is important to at least investigate possible employment of Program Mark on our mark-recapture data.
+
+#### Mark-Recapture
+
+Recently, we (Sportfish personnel) have discussed the merits of continuing to use an external tag (i.e., the disc tag). Some population metrics rely on angler reporting of the disc tag. Poor angler tag returns can biased low harvest rates, for example. Improving and maintaining angler reporting rate requires sustained outreach and angler willingness (i.e., is the reward enough such that the angler will return the tag). We learned recently possibly many anglers retain the tag (without reporting) as a souvenir or as "bragging rights" to their buddies.
+
+- **Disc Tag**: we continue to discuss (likely with analytics, special studies, and [or] outreach) continuation of external tagging. Improving angler reporting may require something other than money. We should define "sustained outreach" answering who, what, where, and when.
+
+- **PIT Tag**: we recommend implanting a single PIT tag into every captured sturgeon. This technology is relatively inexpensive, easy to apply, and will endure with the fish. The PIT tag will act as a second mark (if we continue disc tagging) and could offer data on migration, recapture, and (or) disc tag shedding rate. It might even be possible to have other CDFW Bay Delta Studies (e.g., [San Francisco Bay Study](https://wildlife.ca.gov/Conservation/Delta/Bay-Study)) implant a PIT tag into captured sturgeon. Though such an endeavor would require agreement from the appropriate personnel.
+
+- **Acoustic Tag**: ??
+
+#### Data Availability
+
+- **User-interface**: for nearly a decade now, sturgeon mark-recapture data have been stored in a server-based database. We recommend developing a user interface to afford others (secure) access to our data in a format customed to their needs. We discourage the slap-happy practice of posting to an FTP or like website a stand-alone database copy or flatfile extracts.
+
+- **Metadata**: improve documentation, including protocols. Make such documentation readily available and establish a plan to maintain and update (as needed) such documentation.
+
+#### Angler Science
+
+It is important to integrate the angler community with our science. Recently, we attended two sturgeon fishing derbies to explore data collection possibilities and to promote our science. We learned anglers are very interested in sustaining our sturgeon fishery for generations and derby promoters are eager to help as they can. As such, it may be possible for science staff to collect data (e.g., fin ray samples [for aging]; length) at set times during annaul derbies. Further, some party (charter) boat captains seem receptive to implanting into and (or) scanning for PIT tags of catch-and-released sturgeon. We are still disussing the logistics and mechanisms of how we would conduct such an operation. Likely, we would require some additional staff (e.g., Scientific Aids) and supplies (e.g., PIT tags; PIT tag scanners).

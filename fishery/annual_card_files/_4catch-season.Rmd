@@ -1,0 +1,316 @@
+---
+
+---
+
+<!-- To get a sense of spatial and temporal catch, we added a 'Season' field to angler catch data. We group seasons as follows: winter = Dec, Jan, Feb; spring = Mar, Apr, May; summer = Jun, Jul, Aug; and fall = Sep, Oct, Nov. To maintain chronology and because winter crosses each calendar year, we 'pushed' Dec into the next Card year. For example, Dec 2008 is grouped with Jan 2009 & Feb 2009 to make winter 2009. As such, winter 2007 (Dec 2006, Jan 2007, & Feb 2007) is data "light" because the Card did not really come on-line until March 2007. Consider this fact when viewing annual summaries for winter 2007. -->
+
+<!-- Here we display but 5 rows of the `nrow(catch_yr_loc)` annual summary of seasonal and geographic (location) catch. For `Species`, 'k' denotes kept and 'r' denotes released. Seasons are abbreviated 'uk', 'wi', 'sp', 'su', and 'fa' (unknown, winter, spring, summer, fall). `Total` is total annual catch per location, and `NumAngl` and `NumMeas` are number of anglers and number (of fish) measured. We use (converted) fork length (in centimeters) and provide mean and standard deviation (sd) when number measured greater than 0. -->
+
+<!-- catch per season, creates new dataframe from `catch` -->
+
+```{r catch-season}
+
+# NOTE: seasonal catch where Dec is in previous year so for example 2019 data
+# would be Dec 2018, Jan 2019, Feb 2019 for winter, etc.
+
+# NOTE: this solution is good but now it's not the same "group" of anglers as
+# now Dec & Jan+Feb are two different Card years; something to mention in the
+# narrative (10-Apr-2020)
+
+# ************************************************
+# add Season field to catch data where
+# winter (wi): Dec (previous year), Jan, Feb
+# spring (sp): Mar, Apr, May
+# summer (su): Jun, Jul, Aug
+# fall   (fa): Sep, Oct, Nov
+# ************************************************
+
+# allows for understanding catch based on season & location
+
+# creates lookup for Month field
+lkp_season <- setNames(
+  object = c(
+    rep("wi", times = 2),
+    rep("sp", times = 3),
+    rep("su", times = 3),
+    rep("fa", times = 3),
+    "wi"
+  ),
+  nm = c(paste0(0, 1:9), 10:12)
+)
+
+# to add 'Season' field to catch dataframe; where Month is not supplied (i.e.,
+# NA) Season is 'uk' or unknown; we make field a factor for ordering as in
+# `labels` below
+Card$AnglerCatch$Season <- factor(
+  lkp_season[Card[["AnglerCatch"]][["Month"]]],
+  levels = c(NA, "wi", "sp", "su", "fa"),
+  labels = c("uk", "wi", "sp", "su", "fa"),
+  exclude = NULL
+)
+
+# needed for grouping & then splitting
+Card[["AnglerCatch"]]$MonthNum <- as.numeric(Card[["AnglerCatch"]][["Month"]])
+Card[["AnglerCatch"]]$GroupYear <- GroupYear(
+  Card[["AnglerCatch"]],
+  year = Year,
+  mon = MonthNum,
+  startMon = 12,
+  direction = "backward"
+)
+
+catch_season <- Split(
+  data = Card[["AnglerCatch"]],
+  # vars = -GroupYear,
+  splitVars = GroupYear
+)
+
+# for convenient data type & colnames (grouped year advanced by 1 for
+# realignment back to Card year)
+catch_season$GroupYear <- as.numeric(catch_season[["GroupYear"]]) + 1
+colnames(catch_season) <- c("Year", "Data")
+
+# can remove these columns from main data as these fields are now in
+# catch_season[["Data]]
+Card[["AnglerCatch"]]$MonthNum <- NULL
+Card[["AnglerCatch"]]$GroupYear <- NULL
+
+```
+
+```{r catch-season-wstk}
+
+catch_season$WSTk <- lapply(
+  
+  catch_season[["Data"]], FUN = function(d, lvls = loc_lvls) {
+    
+    # for all codes present within each 'Split'
+    d$LocCode <- factor(d[["LocCode"]], levels = lvls)
+  
+    r <- Split(
+      data = d,
+      subset = Species %in% "White" &
+        Fate %in% "kept",
+      vars = c(FL_cm, Season, AnglerID),
+      splitVars = LocCode,
+      drop = FALSE
+    )
+    
+    # cycle through each location code to get count by seaso
+    o <- vapply(r[["Data"]], FUN = function(dd) {
+      a <- length(unique(dd[["AnglerID"]]))
+      l <- Filter(f = Negate(is.na), x = dd[["FL_cm"]])
+      c(
+        Ang = a,
+        table(dd[["Season"]]),
+        Tot = nrow(dd),
+        Meas = length(l),
+        MnFL = mean(l),
+        SdFL = sd(l)
+      )
+    }, FUN.VALUE = numeric(10L))
+    # end vapply
+    
+    t(o)
+  }
+)
+# end lapply
+
+```
+
+```{r catch-season-wstr}
+
+catch_season$WSTr <- lapply(
+  
+  catch_season[["Data"]], FUN = function(d, lvls = loc_lvls) {
+    
+    # for all codes present within each 'Split'
+    d$LocCode <- factor(d[["LocCode"]], levels = lvls)
+  
+    r <- Split(
+      data = d,
+      subset = Species %in% "White" &
+        Fate %in% "released",
+      vars = c(FL_cm, Season, AnglerID),
+      splitVars = LocCode,
+      drop = FALSE
+    )
+    
+    # cycle through each location code to get count by seaso
+    o <- vapply(r[["Data"]], FUN = function(dd) {
+      a <- length(unique(dd[["AnglerID"]]))
+      l <- Filter(f = Negate(is.na), x = dd[["FL_cm"]])
+      c(
+        Ang = a,
+        table(dd[["Season"]]),
+        Tot = nrow(dd),
+        Meas = length(l),
+        MnFL = mean(l),
+        SdFL = sd(l)
+      )
+    }, FUN.VALUE = numeric(10L))
+    # end vapply
+    
+    t(o)
+  }
+)
+# end lapply
+
+```
+
+```{r catch-season-gst}
+
+catch_season$GST <- lapply(
+  
+  catch_season[["Data"]], FUN = function(d, lvls = loc_lvls) {
+    
+    # for all codes present within each 'Split'
+    d$LocCode <- factor(d[["LocCode"]], levels = lvls)
+  
+    r <- Split(
+      data = d,
+      subset = Species %in% "Green",
+      vars = c(FL_cm, Season, AnglerID),
+      splitVars = LocCode,
+      drop = FALSE
+    )
+    
+    # cycle through each location code to get count by seaso
+    o <- vapply(r[["Data"]], FUN = function(dd) {
+      a <- length(unique(dd[["AnglerID"]]))
+      l <- Filter(f = Negate(is.na), x = dd[["FL_cm"]])
+      c(
+        Ang = a,
+        table(dd[["Season"]]),
+        Tot = nrow(dd),
+        Meas = length(l),
+        MnFL = mean(l),
+        SdFL = sd(l)
+      )
+    }, FUN.VALUE = numeric(10L))
+    # end vapply
+    
+    t(o)
+  }
+)
+# end lapply
+
+```
+
+```{r plot-wstr-spb, eval=FALSE}
+
+# plot seasonal catch of released White Sturgeon for San Pablo Bay (SPB). Data
+# points indicated by 2-character seasonal abbreviation.
+
+# for yaxis range
+rng <- vapply(catch_season[["WSTr"]], FUN = function(d) {
+  range(d["16", c("wi", "sp", "su", "fa")])
+}, FUN.VALUE = numeric(2L))
+
+# for empty plot
+p_season_wstr <- Plot(
+  x = range(catch_season[["Year"]]),
+  y = range(rng)
+)
+
+p_season_wstr$grid(xRng = TRUE)
+
+# points or text for noting number released by season
+Map(f = function(y, d) {
+  
+  yy <- d["16", c("wi", "sp", "su", "fa")]
+  
+  # to mitigate overplotting
+  dodge <- c(-0.2, -0.1, 0.1, 0.2)
+  
+  text(
+    # x = rep(y, length = 4),
+    x = y + dodge,
+    y = yy,
+    labels = names(yy),
+    col = rgb(red = 0, green = 0, blue = 0, alpha = 0.8)
+  )
+  
+  # points(
+  #   x = y + dodge,
+  #   y = yy,
+  #   col = 1:4
+  # )
+  
+}, catch_season[["Year"]], catch_season[["WSTr"]])
+
+# add tick labels (need to add axis labels too)
+Axis(p_season_wstr, side = 1, labelAdj = 0.3, interval = 2)
+Axis(p_season_wstr, side = 2, labelAdj = 0.4)
+
+mtext(
+  text = "White Sturgeon released by Season, San Pablo Bay",
+  side = 3,
+  line = 0,
+  adj = 0,
+  col = "grey25"
+)
+
+# chunk clean up
+rm(rng)
+
+```
+
+```{r plot-wstk-loc-04_18, eval=FALSE}
+
+# plot winter catch of kept White Sturgeon comparing locations Suisun Bay (18)
+# and Sacramento River (Rio Vista to Chipps Island; 04). Data points indicated
+# by 2-character location code.
+
+# for yaxis range
+rng <- vapply(catch_season[["WSTk"]], FUN = function(d) {
+  range(d[c("04", "18"), "wi"])
+}, FUN.VALUE = numeric(2L))
+
+# for empty plot
+p_season_wstk <- Plot(
+  x = range(catch_season[["Year"]]),
+  y = range(rng)
+)
+
+p_season_wstr$grid(xRng = TRUE)
+
+# points or text for noting number released by season
+Map(f = function(y, d) {
+  
+  yy <- d[c("04", "18"), "wi"]
+  
+  # to mitigate overplotting
+  dodge <- c(-0.1, 0.1)
+  
+  text(
+    # x = rep(y, length = 4),
+    x = y + dodge,
+    y = yy,
+    labels = names(yy),
+    col = rgb(red = 0, green = 0, blue = 0, alpha = 0.8)
+  )
+  
+  # points(
+  #   x = y + dodge,
+  #   y = yy,
+  #   col = 1:2
+  # )
+  
+}, catch_season[["Year"]], catch_season[["WSTk"]])
+
+# add tick labels (need to add axis labels too)
+Axis(p_season_wstk, side = 1, labelAdj = 0.3, interval = 2)
+Axis(p_season_wstk, side = 2, labelAdj = 0.4)
+
+mtext(
+  text = "White Sturgeon kept Winter Season",
+  side = 3,
+  line = 0,
+  adj = 0,
+  col = "grey25"
+)
+
+# chunk clean up
+rm(rng)
+
+```

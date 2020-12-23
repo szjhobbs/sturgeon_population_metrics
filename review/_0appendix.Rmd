@@ -1,0 +1,1488 @@
+---
+
+---
+
+```{r appendix, include=FALSE}
+
+knitr::opts_knit$set(root.dir = "~/RProjects/SturgeonPopMetrics/")
+
+```
+
+```{r years, eval=FALSE}
+
+unique(Tagging$Effort$RelYear)
+
+
+
+julian_day <- vapply(Tagging$Effort$RelDate, FUN = function(x) {
+  y <- format(x, format = "%Y")
+  d <- julian(x, origin = as.Date(paste0(y, "-01-01")))
+  as.numeric(d)
+}, FUN.VALUE = numeric(1L))
+
+
+range(julian_day)
+
+with(data = Tagging[["Effort"]], expr = {
+  
+  b <- !(TaggingLoc %in% c("FremontW", "TisdaleBP", "unk"))
+  
+  res <- aggregate(RelDate[b], by = list(Year = RelYear[b]), FUN = range)
+  
+  res <- data.frame(
+    res["Year"],
+    Start = res[["x"]][, 1],
+    End = res[["x"]][, 2],
+    stringsAsFactors = FALSE
+  )
+  
+  res[2:3] <- lapply(res[2:3], FUN = function(x) {
+    d <- as.POSIXct(x, tz = "UTC", origin = "1970-01-01")
+    # strptime(d, format = "%d-%b")
+    format(d, format = "%d-%b")
+  })
+  
+  days <- aggregate(
+    RelDate,
+    by = list(Year = RelYear, Month = format(RelDate, format = "%m")),
+    FUN = function(x) length(unique(x))
+  )
+  
+  list(
+    SamplingMon = res,
+    DaysSampledMon = xtabs(formula = x ~ Year + Month, data = days)
+  )
+})
+
+
+
+```
+
+<!-- Sampling Frequency -->
+<!-- Sampling Period (why chosen) -->
+<!-- Sampling Locations -->
+<!-- Describe how sampling has changed over time -->
+<!-- Plot coordinates?? -->
+
+```{r coords}
+
+# coord_column_na <- apply(
+#   Tagging[["Coordinates"]][-1],
+#   MARGIN = 1,
+#   FUN = function(x) sum(is.na(x))
+# )
+
+# table(coord_column_na, useNA = "ifany")
+
+# to separately get lat & lon fields in Effort data
+cols_coord <- colnames(Tagging[["Coordinates"]])
+n_coords <- nrow(Tagging[["Coordinates"]])
+
+cols_lat_lon <- list(
+  Lat = grepl(pattern = "^Lat", x = cols_coord),
+  Lon = grepl(pattern = "^Lon", x = cols_coord)
+)
+
+# because not all set intervals have coordinates, we get the mean lat lon for
+# each net set; to be added to Effort dataframe in next steps
+coords_mean <- vapply(cols_lat_lon, FUN = function(b) {
+  rowMeans(Tagging[["Coordinates"]][b], na.rm = TRUE)
+}, FUN.VALUE = numeric(n_coords))
+
+# to add coords_mean to `Effort` dataframe
+i <- match(
+  Tagging[["Effort"]][["NetSetId"]],
+  table = Tagging[["Coordinates"]][["NetSetId"]]
+)
+
+# for simplicity of working with `Effort` dataframe
+Tagging$Effort$AvgLat <- coords_mean[i, "Lat"]
+Tagging$Effort$AvgLon <- coords_mean[i, "Lon"]
+
+# section clean up
+rm(cols_coord, n_coords, cols_lat_lon, coords_mean, i)
+
+```
+
+```{r effort-split}
+
+effort <- Split(
+  data = Tagging[["Effort"]],
+  # subset = !(TaggingLoc %in% c("FremontW", "TisdaleBP", "unk")),
+  vars = -RelYear,
+  splitVars = RelYear
+)
+
+# for proper data type
+effort$RelYear <- as.numeric(effort[["RelYear"]])
+
+```
+
+```{r water-conditions}
+
+# to match effort records with environmental records
+
+effort$WaterCond <- lapply(effort[["Data"]], FUN = function(d, matchData) {
+  
+  id <- "NetSetId"
+  
+  i <- match(d[[id]], table = matchData[[id]])
+  
+  fields <- c("Tide", "BfrtScale", "WaterTempC")
+  
+  matchData[i, fields]
+  
+}, Tagging[["WaterConditions"]])
+
+```
+
+```{r effort-nfh}
+
+# to get fishing effort by net set
+
+effort$Effort <- lapply(effort[["Data"]], FUN = function(d) {
+  EffortStu(
+    data = d,
+    sStart = SetStart,
+    sEnd = SetEnd,
+    rStart = RetrieveStart,
+    rEnd = RetrieveEnd ,
+    netLength = Fathoms
+  )
+})
+
+```
+
+```{r days-per-month}
+
+# to get all months sampled for consistency between years (annual calculations)
+months_sampled <- unique(
+  format(
+    Tagging[["Effort"]][["RelDate"]],
+    format = "%m"
+  )
+)
+
+months_sampled <- sort(as.numeric(months_sampled))
+month_levels <- month.abb[months_sampled]
+n_levels <- length(month_levels)
+
+# for days sampled per month (0 will appear when no sampling occurred)
+effort$DaysPerMonth <- t(vapply(effort[["Data"]], FUN = function(d, levels) {
+  
+  # to ensure every level per year when split()ing
+  m <- format(d[["RelDate"]], format = "%b")
+  m <- factor(m, levels = levels)
+  
+  s <- split(d[["RelDate"]], f = m)
+  
+  vapply(s, FUN = function(x) {
+    length(unique(x))
+  }, FUN.VALUE = numeric(1L))
+  
+}, FUN.VALUE = numeric(n_levels), month_levels))
+
+# section clean up
+rm(months_sampled, month_levels, n_levels)
+
+```
+
+```{r effort-period}
+
+# to get start & end date for each sampling year
+
+effort$Period <- t(vapply(effort[["Data"]], FUN = function(d) {
+  
+  # b <- !(d[["TaggingLoc"]] %in% c("FremontW", "TisdaleBP", "unk"))
+  b <- !(d[["TaggingLoc"]] %in% c("FremontW", "TisdaleBP"))
+  
+  if (sum(b) == 0) return(rep(NA_character_, length = 2))
+  
+  r <- range(d[b, "RelDate"])
+  names(r) <- c("Start", "End")
+  
+  format(r, format = "%d-%b")
+  
+}, FUN.VALUE = character(2L)))
+
+```
+
+```{r days-sampled}
+
+# effort$DaysSampled <- vapply(effort[["Data"]], FUN = function(d) {
+#   b <- !(d[["TaggingLoc"]] %in% c("FremontW", "TisdaleBP"))
+#   length(unique(d[b, "RelDate"]))
+# }, FUN.VALUE = numeric(1L), USE.NAMES = FALSE)
+
+# to calculate number of days sampled along with number of days two boats fished
+# at same time
+
+effort$Days <- t(vapply(effort[["Data"]], FUN = function(d) {
+  
+  b <- !(d[["TaggingLoc"]] %in% c("FremontW", "TisdaleBP"))
+  
+  n_vessel <- length(unique(d[b, "Vessel"]))
+  
+  d_boat <- NA_integer_
+  
+  if (n_vessel > 1)
+    d_boat <- sum(!duplicated(d[b, c("RelDate", "Vessel")]))
+  
+  c(
+    CalendarDays = length(unique(d[b, "RelDate"])),
+    BoatDays = d_boat,
+    Vessels = n_vessel,
+    NetSets = length(d[b, "NetSet"])
+  )
+  
+}, FUN.VALUE = numeric(4L)))
+
+```
+
+```{r net-length}
+
+# chunk calculates annually number of net sets by net length (fathoms)
+
+# variables needed for vapply so that each year has equivalent number of levels
+# (i.e., number of panel configurations from 50 to 250)
+rng_net_length <- range(Tagging[["Effort"]][["Fathoms"]], na.rm = TRUE)
+# lvls <- seq(from = rng_net_length[1], to = rng_net_length[2], by = 25)
+lvls <- sort(unique(Tagging[["Effort"]][["Fathoms"]]))
+n_lvls <- length(lvls)
+
+effort$NetLength <- t(vapply(effort[["Data"]], FUN = function(d, levels) {
+  b <- !(d[["TaggingLoc"]] %in% c("FremontW", "TisdaleBP"))
+  l <- factor(d[b, "Fathoms"], levels = levels)
+  table(l, useNA = "always")
+}, FUN.VALUE = numeric(n_lvls + 1), lvls))
+
+# section clean up
+rm(rng_net_length, lvls, n_lvls)
+
+```
+
+```{r sets-location}
+
+# to get tagging location by year; 0 indicating not sampled, number indicates
+# number of net sets deployed at said location
+
+# FremontW LwrSJDelta LwrSJRiver SacRiver SanPablo Suisun TisdaleBP unk
+locations <- sort(unique(Tagging[["Effort"]][["TaggingLoc"]]))
+not_used <- c("FremontW", "TisdaleBP", "unk")
+n_levels <- length(locations) - length(not_used)
+
+effort$TagLoc <- t(vapply(effort[["Data"]], FUN = function(d, levels, exclude) {
+  
+  l <- factor(d[["TaggingLoc"]], levels = levels, exclude = exclude)
+  table(l)
+  
+}, FUN.VALUE = numeric(n_levels), levels = locations, exclude = not_used))
+
+# section clean up
+rm(locations, not_used, n_levels)
+
+```
+
+```{r weekdays}
+
+# to understand which days of the week were sampled; excludes rescue fish from
+# Fremont Weir & Tisdale Bypass (from 2011)
+
+effort$Weekdays <- t(vapply(effort[["Data"]], FUN = function(d) {
+  
+  b <- !(d[["TaggingLoc"]] %in% c("FremontW", "TisdaleBP"))
+  
+  w <- weekdays(d[b, "RelDate"], abbreviate = TRUE)
+  
+  wdays <- c("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
+  
+  w <- factor(w, levels = wdays)
+  
+  s <- split(d[b, "RelDate"], f = w)
+  
+  vapply(s, FUN = function(x) {
+    length(unique(x))
+  }, FUN.VALUE = numeric(1L))
+  
+}, FUN.VALUE = numeric(7)))
+
+```
+
+```{r net-sets-day}
+
+# for count on annual net sets per day (includes average & standard dev)
+
+effort$NetSetsDay <- t(vapply(effort[["Data"]], FUN = function(d) {
+  
+  s <- split(d[["NetSet"]], f = d[c("RelDate", "Vessel")], drop = TRUE)
+  n <- vapply(s, FUN = length, FUN.VALUE = numeric(1L), USE.NAMES = FALSE)
+  
+  # a possibility
+  # gte5 <- mean(n >= 5)
+  
+  c(N = length(n), Min = min(n), Max = max(n) , Avg = mean(n), Sd = sd(n))
+  
+}, FUN.VALUE = numeric(5L)))
+
+```
+
+```{r water-temp, warning=FALSE}
+
+# for descriptive stats on water temperature
+
+effort$WaterTempC <- t(vapply(effort[["WaterCond"]], FUN = function(d) {
+  # if (all(is.na(d))) return(rep(NA, 7))
+  unlist(DescStat(d[["WaterTempC"]]))
+}, FUN.VALUE = numeric(7L)))
+
+# if needed
+# effort$WaterTempC <- as.data.frame(effort[["WaterTempC"]])
+
+```
+
+```{r tide}
+
+# for count of net sets by tide (ebb, slack, flood)
+
+effort$Tide <- t(vapply(effort[["WaterCond"]], FUN = function(d) {
+  tide <- factor(d[["Tide"]], levels = c("ebb", "flood", "slack"))
+  table(tide, useNA = "always")
+}, FUN.VALUE = numeric(4L)))
+
+```
+
+```{r beaufort}
+
+# for number of nets sets deployed given wind & wave conditions
+
+max_beaufort <- max(Tagging[["WaterConditions"]][["BfrtScale"]], na.rm = TRUE)
+
+effort$BfrtScale <- t(vapply(effort[["WaterCond"]], FUN = function(d, maxVal) {
+  bfrt <- factor(d[["BfrtScale"]], levels = as.character(0:maxVal))
+  table(bfrt, useNA = "always")
+}, FUN.VALUE = numeric(9L), as.numeric(max_beaufort)))
+
+# section clean up
+rm(max_beaufort)
+
+```
+
+```{r effort-summary, warning=FALSE}
+
+# annual descriptive stats by net set; effort is net-fathom hour
+
+effort$EffortSummary <- t(vapply(effort[["Effort"]], FUN = function(d) {
+  c(
+    DescStat(d[["Effort"]]),
+    Total = sum(d[["Effort"]], na.rm = TRUE),
+    recursive = TRUE
+  )
+}, FUN.VALUE = numeric(8L)))
+
+```
+
+```{r julian-day}
+
+# calulates julian day for each sampling date where origin is beginning of each
+# sampling year; this is to simplify plotting start & end dates by year
+
+effort$JulDay <- Map(f = function(d, y) {
+  u <- unique(d[["RelDate"]])
+  o <- as.Date(paste0(y, "-01-01"))
+  jd <- julian(u, origin = o)
+  # as.numeric(jd)
+  jd <- Filter(f = function(x) x >= 200, x = as.numeric(jd))
+  if (length(jd) == 0) return(NA)
+  jd
+}, effort[["Data"]], effort[["RelYear"]])
+
+```
+
+```{r catch}
+
+catch <- Split(
+  data = Tagging[["Sturgeon"]],
+  # subset = !(TaggingLoc %in% c("FremontW", "TisdaleBP", "unk")),
+  vars = -RelYear,
+  splitVars = RelYear
+)
+
+# for desired data type
+catch$RelYear <- as.numeric(catch[["RelYear"]])
+
+```
+
+```{r catch-species}
+
+catch$Species <- t(vapply(catch[["Data"]], FUN = function(d) {
+  s <- factor(d[["Species"]], levels = c("White", "Green"))
+  table(s)
+}, FUN.VALUE = numeric(2L)))
+
+```
+
+```{r catch-disc-tag_wst}
+
+catch$DiscTagWST <- vapply(catch[["Data"]], FUN = function(d) {
+  
+  # needed to get only disc-tagged white sturgeon
+  sum(
+    (d[["TagNum"]] != "" | is.na(d[["PitNum"]]))
+    & d[["Species"]] %in% "White"
+    & d[["StuType"]] %in% "Tag"
+  )
+  
+}, FUN.VALUE = numeric(1L), USE.NAMES = FALSE)
+
+```
+
+```{r eval=FALSE}
+
+# still tinkering with box plot idea (26-Feb-2020)
+
+# mat <- matrix(data = c(1:2), nrow = 1, ncol = 2, byrow = TRUE)
+# lo <- layout(mat = mat, widths = 0.5)
+# layout.show(n = lo)
+
+# table(Tagging$Sturgeon$RelYear, Tagging$Sturgeon$MeshSize)
+
+p_mesh <- Plot(
+  x = Tagging[["Sturgeon"]][["MeshSize"]],
+  y = Tagging[["Sturgeon"]][["FL"]],
+  subset = Tagging[["Sturgeon"]][["RelYear"]] %in% 2019 &
+    Tagging[["Sturgeon"]][["Species"]] %in% "White",
+  adjUsr = 1, xAsFactor = F
+)
+
+p_mesh$grid(xRng = T, nx = 1)
+
+# p_mesh$xticks()
+
+
+bp <- aggregate(
+  p_mesh$data()[["y"]],
+  by = p_mesh$data()["x"],
+  FUN = boxplot,
+  plot = FALSE, 
+  simplify = FALSE
+)
+
+# points(p_mesh, xRng = T, nx = 1)
+
+# bxp(z = bp[["y"]])
+
+# lapply(bp[[2]], FUN = function(p) {bxp(z = p, at = 6.5, add = T)})
+
+testbp <- Map(f = function(p, x) {
+  # bxp(z = p, at = x, add = T, frame.plot = FALSE)
+  
+  bxp(
+    z = p,
+    add = TRUE,
+    at = x,
+    frame.plot = FALSE,
+    boxwex = 0.5,
+    whisklty = 1,
+    whiskcol = "grey50",
+    boxcol = "grey50",
+    staplelty = 0,
+    outpch = 20,
+    outcex = 0.7,
+    outcol = rgb(red = 0, green = 0, blue = 0, alpha = 0.5),
+    medcol = "grey30",
+    yaxt = "n",
+    xaxt = "n",
+    bty = "n"
+  )
+
+  
+  
+}, bp[[2]], c(6.5, 7, 7.5))
+
+p_mesh$xticks()
+p_mesh$ticks(side = 1)
+
+Axis(p_mesh, side = 1)
+
+```
+
+```{r eval=FALSE}
+
+# ***
+
+par(mar = c(0.1, 1.5, 0.5, 0.1), oma = c(2, 1, 0.1, 0.5))
+
+p_mesh <- Plot(
+  x = Tagging[["Sturgeon"]][["MeshSize"]],
+  y = Tagging[["Sturgeon"]][["FL"]],
+  subset = Tagging[["Sturgeon"]][["RelYear"]] %in% 2019 &
+    Tagging[["Sturgeon"]][["Species"]] %in% "White"
+)
+
+p_mesh$grid(xRng = TRUE)
+
+p_mesh$BoxPlot <- Map(f = function(x, y) {
+  
+  # for years in which we did not record water temp
+  # if (all(is.na(y[["WaterTempC"]]))) return(NULL)
+  if (all(is.na(y))) return(NULL)
+  
+  # eventual color for outlier points to mitigate over-plotting
+  col <- rgb(red = 0, green = 0, blue = 0, alpha = 0.5)
+  
+  # bp variable generates boxplot stats (e.g., 25%, 50%, 75%)
+  bp <- boxplot(y, plot = FALSE)
+  
+  # display boxplot stats on plot
+  bxp(
+    z = bp,
+    add = TRUE,
+    at = x,
+    frame.plot = FALSE,
+    whisklty = 1,
+    whiskcol = "grey50",
+    boxcol = "grey50",
+    staplelty = 0,
+    outpch = 20,
+    outcex = 0.7,
+    outcol = col,
+    medcol = "grey30",
+    yaxt = "n",
+    xaxt = "n"
+  )
+  
+  # function output
+  # bp$stats
+  bp$n
+  
+}, catch$Data$MeshSize, catch$Data$FL)
+
+
+
+
+```
+
+## Effort
+
+We have sampled roughly 40&pm; days per year (figure below). The number of days two vessels sampled on the same day varied annually (i.e., for years when we deployed two research vessels [R/V]; blue bars in figure below). *Note*: We sampled for only one day in 1955 (21-Jan), and it is not entirely clear (1) if more sampling was planned for said year and (2) why January.
+
+<!-- still not keen on blue color in plot -->
+
+```{r plot-days}
+
+# plotting sampling days - does not include non-trammel caught rescue fish from
+# 2011
+
+par(mar = c(0.1, 1.75, 1.25, 0.5), oma = c(2, 1, 0.1, 0.5))
+
+multi_vessel_days <- effort$Days[, "BoatDays"] - effort$Days[, "CalendarDays"]
+
+# for fraction divide above by effort$Days[, "CalendarDays"]
+
+p_days <- Plot(
+  x = effort[["RelYear"]],
+  y = effort[["Days"]][, "CalendarDays"],
+  y0 = TRUE,
+  adjUsr = 0.5
+)
+
+points(
+  p_days,
+  type = "h",
+  lwd = 6,
+  col = grey(0.1, alpha = 0.5),
+  xRng = TRUE
+)
+
+points(
+  x = effort[["RelYear"]],
+  y = multi_vessel_days,
+  # col = grey(0.05, alpha = 0.8),
+  col = rgb(red = 0, green = 0, blue = 0.6, alpha = 0.6),
+  type = "h",
+  lend = 1,
+  lwd = 6
+)
+
+Axis(
+  p_days,
+  side = 1,
+  # cexAxis = 1.25,
+  cexAxis = 1,
+  labelAdj = 0.25,
+  interval = 5,
+  offset = 1
+)
+
+Axis(
+  p_days,
+  side = 2,
+  # cexAxis = 1.25,
+  cexAxis = 1,
+  labelAdj = 0.35
+)
+
+mtext(text = "Year", side = 1, line = 1.1)
+mtext(text = "Calendar days", side = 2, line = 1.5)
+
+legend(
+  x = p_days[["xrng"]][[2]],
+  y = p_days[["yrng"]][[2]] * 1.1,
+  legend = c("Total", "Two R/Vs"),
+  fill = c(
+    grey(0.1, alpha = 0.5),
+    rgb(red = 0, green = 0, blue = 0.6, alpha = 0.6)
+  ),
+  bty = "n",
+  xjust = 1,
+  ncol = 2,
+  border = NA,
+  xpd = TRUE
+)
+
+# section clean up
+rm(multi_vessel_days)
+
+```
+
+Prior to 2000, sampling began in September, the inagural year (1954) excepted (figure below). Sampling in August began in 2001 but subsequent start dates varied by days or weeks (i.e., not always the first week of August). Sampling beyond October was not a common practice. *Note*: Sampling in 1955 (21-Jan) omitted for plot clarity.
+
+```{r plot-julian-days}
+
+# to plot start & end dates by year
+
+par(mar = c(0.1, 2, 1.25, 1), oma = c(2, 1, 0.1, 0.5))
+
+# vapply(effort[["JulDay"]], FUN = range, FUN.VALUE = numeric(2L))
+
+p_julday <- Plot(
+  x = effort[["RelYear"]],
+  y = unlist(effort[["JulDay"]], use.names = FALSE),
+  adjUsr = 0.5
+)
+
+p_julday$grid(xRng = TRUE)
+
+plot_points <- Map(f = function(x, y) {
+  
+  if (all(is.na(y))) return(NULL)
+  
+  n <- length(y)
+  rngy <- range(y)
+  
+  # val <- y %in% range(y)
+  val <- vector(mode = "numeric", length = n)
+  val[which(y %in% rngy)] <- c(1, 2)
+  val <- as.character(val)
+  
+  # lkp_pch <- c(`0` = 20, `1` = 19, `2` = 15)
+  lkp_pch <- c(`0` = 20, `1` = 24, `2` = 25)
+  lkp_cex <- c(`0` = 0.75, `1` = 1, `2` = 1)
+  lkp_lwd <- c(`0` = 1, `1` = 1, `2` = 1)
+  lkp_col <- c(
+    `0` = grey(level = 0.5, alpha = 0.5),
+    `1` = "steelblue3",
+    # `1` = "#556B2F",
+    `2` = "orange2"
+    # `2` = "#8B2323"
+  )
+  
+  points(
+    # jitter(rep(x, times = n), amount = 0.15),
+    x = rep(x, times = n),
+    y = y,
+    lwd = lkp_lwd[val],
+    # pch = 19,
+    pch = lkp_pch[val],
+    # cex = 0.5,
+    col = lkp_col[val],
+    cex = lkp_cex[val]
+    # col = "grey50"
+    # col = rgb(0, 0, 0, 0.2)#,
+    # type = "l"
+  )
+  
+}, effort[["RelYear"]], effort[["JulDay"]])
+
+Axis(p_julday, side = 1, labelAdj = 0.3, interval = 5, offset = 1)
+Axis(p_julday, side = 2, labelAdj = 0.4)
+
+mtext(text = "Year", side = 1, line = 1.1)
+mtext(text = "Julian days", side = 2, line = 2)
+
+legend(
+  x = p_julday[["xrng"]][[2]],
+  y = p_julday[["yrng"]][[2]] * 1.04,
+  legend = c("start", "end"),
+  col = c("steelblue3", "orange2"),
+  pch = c(24, 25),
+  pt.lwd = 1,
+  ncol = 2,
+  border = NA,
+  bty = "n",
+  xjust = 1,
+  xpd = TRUE
+)
+
+yticks <- p_julday$yticks()
+
+dts <- as.Date(paste(2019, c(1, 8:11), "01", sep = "-"))
+
+jdts <- as.numeric(julian(dts[2:5], origin = dts[1]))
+
+# for displaying relative months on right yaxis
+mtext(
+  text = paste0("| ", format(dts[2:5], format = "%b")),
+  side = 4,
+  at = jdts,
+  adj = 0,
+  col = "grey50"
+)
+
+# section clean up
+rm(plot_points, yticks, dts, jdts)
+
+```
+
+Time net set and time net retrieved were either not recorded or not electronically available prior to 1968. Thus, net-fathom hour (i.e., the unit of effort) data are not available for 1954, 1955, and 1967.
+
+Average (&pm;SD) net-fathom hour per net set changed dramatically in 2007 due to (1) halving net length (from 200 fathoms to 100) and (2) shortening soak time per set from 45 minutes to 30 minutes (figure below, bottom panel). Such changes were implemented to reduce pinniped interaction and entangelment. Because of shorter soak times, each research vessel completed more daily sets (figure below, top panel). Total annual net-fathom hour for most years was at or around 20,000 (figure below, middle panel).
+
+```{r plot-nfh, fig.height=7, fig.asp=1}
+
+par(mar = c(0.25, 2.5, 0.25, 0.5), oma = c(3, 1, 0.5, 0.5))
+
+mat <- matrix(data = c(1:3), nrow = 3, ncol = 1, byrow = TRUE)
+lo <- layout(mat = mat, widths = 1, heights = c(1, 1, 1))
+# layout.show(n = lo)
+
+p_sets_nfh <- lapply(c("N", "Total"), FUN = function(nm) {
+  
+  lkp <- c(N = "Net sets", Total = "Net fathom-hour")
+  # lkp <- c(N = "Net sets", Total = "Total NFH")
+  bar_color <- rgb(red = 0, green = 0, blue = 0, alpha = 0.6)
+  
+  p <- Plot(
+    x = effort[["RelYear"]],
+    y = effort[["EffortSummary"]][, nm],
+    subset = effort[["RelYear"]] >= 1968,
+    y0 = TRUE,
+    adjUsr = 0.5
+  )
+
+  points(p, type = "h", lwd = 6, col = bar_color, xRng = TRUE)
+  
+  # xaxis <- Axis(p, side = 1, labelAdj = 0.3, interval = 5, offset = 2)
+  yaxis <- Axis(p, side = 2, cexAxis = 1.5, labelAdj = 0.4, format = TRUE)
+  
+  # mtext(text = "Year", side = 1, line = 1.5)
+  mtext(text = yaxis$AxisTitle(var = lkp[nm]), side = 2, line = 1.5)
+  
+  # section clean up
+  rm(yaxis, p, lkp, bar_color) #xaxis, 
+})
+
+p_nfh_avg <- Plot(
+  x = effort[["RelYear"]],
+  y = effort[["EffortSummary"]][, "Avg"],
+  yerr = sqrt(effort[["EffortSummary"]][, "Var"]),
+  subset = effort[["RelYear"]] >= 1968,
+  adjUsr = 0.5
+)
+
+lines(p_nfh_avg, col = "grey30", lwd = 1.75, lend = 1, xRng = TRUE)
+
+points(
+  p_nfh_avg,
+  type = "p",
+  pch = 21,
+  col = "white",
+  # lwd = 1,
+  bg = "grey30",
+  cex = 1,
+  grid = FALSE
+)
+
+xaxis <- Axis(
+  p_nfh_avg,
+  side = 1,
+  cexAxis = 1.5,
+  labelAdj = 0.6,
+  interval = 5,
+  offset = 2
+)
+
+yaxis <- Axis(
+  p_nfh_avg,
+  side = 2,
+  cexAxis = 1.5,
+  labelAdj = 0.4,
+  format = TRUE
+)
+
+mtext(text = "Year", side = 1, line = 1.65)
+mtext(text = yaxis$AxisTitle(var = "Net fathom-hour"), side = 2, line = 2)
+
+# return to default plotting region
+layout(mat = 1)
+
+# section clean up
+rm(xaxis, yaxis, lo, mat)
+
+# par()
+
+```
+
+Average (&pm;SD) number of daily net sets per vessel increased to roughly 5 in recent years (figure below). This increase a result of shorter soak times implmented in 2007.
+
+<!-- explain why only 1 for 54, 55, & 67 -->
+
+```{r plot-avg-nsets-day}
+
+# plot(effort$[, "Avg"])
+
+par(mar = c(0.1, 1.2, 0.5, 0.1), oma = c(2, 1, 0.1, 0.5))
+
+p_nsets_day <- Plot(
+  x = effort[["RelYear"]],
+  y = effort[["NetSetsDay"]][, "Avg"],
+  yerr = effort[["NetSetsDay"]][, "Sd"],
+  adjUsr = 0.5
+)
+
+lines(p_nsets_day, col = "grey30", lwd = 1.75, lend = 1, xRng = TRUE)
+
+points(
+  p_nsets_day,
+  type = "p",
+  pch = 21,
+  col = "white",
+  # lwd = 1,
+  bg = "grey30",
+  cex = 1,
+  grid = FALSE
+)
+
+Axis(
+  p_nsets_day,
+  side = 1,
+  # cexAxis = 1.25,
+  cexAxis = 1,
+  labelAdj = 0.25,
+  interval = 5,
+  offset = 1
+)
+
+Axis(
+  p_nsets_day,
+  side = 2,
+  # cexAxis = 1.25,
+  cexAxis = 1,
+  labelAdj = 0.35
+)
+
+mtext(text = "Year", side = 1, line = 1.1)
+mtext(text = "Net sets", side = 2, line = 1.1)
+
+```
+
+```{r plot-net-sets, eval=FALSE}
+
+# p_net_sets <- Plot(
+#   x = effort[["RelYear"]],
+#   y = effort[["EffortSummary"]][, "N"],
+#   subset = effort[["RelYear"]] >= 1968,
+#   y0 = TRUE,
+#   adjUsr = 0.5
+# )
+# 
+# points(
+#   p_net_sets,
+#   type = "h",
+#   lwd = 6,
+#   col = rgb(red = 0, green = 0, blue = 0, alpha = 0.6),
+#   xRng = TRUE
+# )
+# 
+# xaxis <- Axis(p_net_sets, side = 1, labelAdj = 0.3, interval = 5, offset = 2)
+# yaxis <- Axis(p_net_sets, side = 2, labelAdj = 0.4, format = TRUE)
+# 
+# mtext(text = "Year", side = 1, line = 1.5)
+# mtext(text = yaxis$AxisTitle(var = "Net sets"), side = 2, line = 1.5)
+# 
+# # section clean up
+# rm(xaxis, yaxis)
+
+```
+
+```{r net-length-frac, eval=FALSE}
+
+# for possible fraction of net sets by net length (annually)
+
+t(vapply(effort[["Data"]], FUN = function(x) {
+  
+  ft <- Filter(f = Negate(is.na), x = x[["Fathoms"]])
+  
+  if (length(ft) == 0) return(rep(NA, times = 5))
+  
+  c(
+    One = mean(ft < 100),
+    One1 = mean(ft == 100),
+    Bet = mean(ft > 100 & ft < 200),
+    Two1 = mean(ft == 200),
+    Two = mean(ft > 200)#,
+    # Min = min(ft),
+    # Max = max(ft)
+    # Two = mean(ft == 200),
+    # One = mean(ft == 100)
+    # Two = mean(ft > 100),
+    # One = mean(ft <= 100)
+  )
+  # fivenum(ft)
+  
+}, FUN.VALUE = numeric(5L)))
+
+```
+
+```{r net-lengths, eval=FALSE}
+
+# possible summary for net length (plotting) but might just use tabular output
+# of effort[["NetLength"]]
+
+net_length_main <- grepl(
+  pattern = "100|200",
+  x = dimnames(effort[["NetLength"]])[[2]]
+)
+
+prop.table(cbind(
+  effort[["NetLength"]][, net_length_main],
+  Other = rowSums(effort[["NetLength"]][, !net_length_main])
+), margin = 1) > 0.5
+
+```
+
+Number of net sets by net length (in fathoms). A complete net is 200 fathoms (or 8 x 25 fathom panels).
+
+```{r net-sets-by-net-len}
+
+knitr::kable(
+  effort[["NetLength"]][effort[["RelYear"]] >= 1968, -8],
+  format = "markdown"
+)
+
+```
+
+## Catch
+
+```{r plot-catch}
+
+par(mar = c(0.25, 1.9, 0.25, 0.9), oma = c(2, 1, 0.5, 0.45))
+mat <- matrix(data = c(1:2), nrow = 2, ncol = 1, byrow = TRUE)
+lo <- layout(mat = mat, widths = 1, heights = c(1, 1))
+# layout.show(n = lo)
+
+p_catch <- lapply(c("Green", "White"), FUN = function(s) {
+  
+  p <- Plot(
+    x = catch[["RelYear"]],
+    y = catch[["Species"]][, s],
+    adjUsr = 0.4
+  )
+  
+  p$grid(xRng = TRUE)
+
+  points(
+    x = p$data()[["x"]],
+    y = catch[["Species"]][, s],
+    type = "h",
+    lend = 1,
+    lwd = 7,
+    col = grey(level = 0.05, alpha = 0.5)
+  )
+  
+  a <- Axis(p, side = 2, labelAdj = 0.4, format = TRUE)
+  
+  mtext(text = a$AxisTitle(var = "Count"), side = 2, line = 1.5)
+  # mtext(text = paste(s, "Sturgeon"), side = 4, line = 0, adj = 1)
+  
+  # need text() to use srt parameter, not allowed in mtext()
+  text(
+    x = p[["xrng"]][[2]] * 1.0012,
+    # y = p[["yrng"]][[2]] / 2,
+    y = p[["yrng"]][[2]],
+    labels = paste(s, "Sturgeon"),
+    adj = 0,
+    srt = -90,
+    xpd = TRUE
+  )
+  
+  p
+})
+
+Axis(p_catch[[1]], side = 1, labelAdj = 0.3, interval = 5, offset = 1)
+mtext(text = "Year", side = 1, line = 1.2)
+
+# clean up
+rm(mat, lo)
+
+```
+
+```{r plot-disc-tagged}
+
+# catch$DiscTagWST
+
+par(mar = c(0.25, 1.9, 0.25, 0.5), oma = c(2, 1, 0.5, 0.2))
+
+p_disc <- Plot(data = catch, x = RelYear, y = DiscTagWST, adjUsr = 0.4)
+# points(p_disc, type = "h", xRng = TRUE, lwd = 7)
+
+points(
+  p_disc,
+  type = "h",
+  xRng = TRUE,
+  lwd = 7,
+  col = grey(level = 0.05, alpha = 0.5)
+)
+
+Axis(
+  p_disc,
+  side = 1,
+  labelAdj = 0.2,
+  interval = 5,
+  offset = 1
+)
+
+p_disc_y <- Axis(
+  p_disc,
+  side = 2,
+  labelAdj = 0.4,
+  format = TRUE
+)
+
+mtext(text = p_disc_y$AxisTitle(var = "Count"), side = 2, line = 1.5)
+mtext(text = "Year", side = 1, line = 1.1)
+
+# section clean up
+rm(p_disc_y)
+
+```
+
+## Environmental Variables
+
+Began recording tidal scale & beaufort scale in 2007, water temp in 2005.
+
+Number of net sets by tidal state
+
+```{r tidal-state}
+
+knitr::kable(
+  effort[["Tide"]][effort[["RelYear"]] >= 2007, -4],
+  format = "markdown"#,
+  # col.names = 
+)
+
+```
+
+Number of net sets by beaufort scale (wind and wave). It's not entirely clear why or how we would fish then net in anything greater than 5.
+
+```{r beaufort-scale}
+
+knitr::kable(
+  effort[["BfrtScale"]][effort[["RelYear"]] >= 2007, -9],
+  format = "markdown"#,
+  # col.names = 
+)
+
+```
+
+Annual variation in water temperature (figure below). Display merely for quick visual and does not consider sampling month and (or) sampling location.
+
+<!-- explain how this is not ideal - plot does not breakdown by month or loc -->
+
+```{r plot-water-temp2, eval=FALSE}
+
+# possible ideas for plotting all water temps per year
+
+Map(f = function(d, w) {
+  
+  # plot(
+  #   x = factor(d[["TaggingLoc"]]),
+  #   y = w[["WaterTempC"]]
+  # )
+  
+  w[["WaterTempC"]]
+  
+}, effort[["Data"]], effort[["WaterCond"]])
+
+plot(
+  effort$Data$`2019`$RelDate,
+  effort$WaterCond$`2019`$WaterTempC,
+  pch = 19, col = rgb(0,0,0, 0.1)
+)
+
+
+range(vapply(effort[["WaterCond"]], FUN = function(d, ...) {
+  if (all(is.na(d))) return(c(NA, NA))
+  range(d[["WaterTempC"]], ...)
+}, FUN.VALUE = numeric(2L), na.rm = TRUE), na.rm = T)
+
+plot(c(2005, 2019), c(0, 25), type = "n")
+points(x = rep(2005, 79), y = effort$WaterCond$`2005`$WaterTempC)
+
+lapply(effort[effort$RelYear >= 2005, "WaterCond"], FUN = function(d) {
+  points()
+})
+
+lapply(effort[["WaterCond"]], FUN = function(d) {
+  if (all(is.na(d[["WaterTempC"]]))) return(NULL) 
+  data.frame(V = d[["WaterTempC"]])
+})
+
+test <- do.call(rbind, Map(f = function(d, w) {
+  if (all(is.na(w[["WaterTempC"]]))) return(NULL) 
+  data.frame(X = d, Y = w[["WaterTempC"]])
+}, effort$RelYear, effort$WaterCond))
+
+
+wt <- Plot(data = test, x = X, y = Y, subset = Y > 0)
+points(wt, xRng = T)
+Axis(wt, side = 1, labelAdj = 0.3, interval = 2, offset = -1)
+Axis(wt, side = 2, labelAdj = 0.3)
+
+```
+
+```{r plot-water-temp, eval=FALSE}
+
+# began taking water temp in 2005 & Beaufort + Tide in 2007
+
+p_water_temp <- Plot(
+  x = effort[["RelYear"]],
+  y = effort[["WaterTempC"]][, "Avg"],
+  yerr = sqrt(effort[["WaterTempC"]][, "Var"]),
+  subset = effort[["RelYear"]] >= 2005
+)
+
+# p_water_temp$grid()
+lines(p_water_temp, col = "grey30", lwd = 1.5, lend = 1, xRng = TRUE)
+points(
+  p_water_temp,
+  type = "p",
+  pch = 21,
+  col = "white",
+  # lwd = 1,
+  bg = "grey30",
+  cex = 1,
+  grid = FALSE
+)
+
+Axis(p_water_temp, side = 1, labelAdj = 0.3, interval = 2)
+Axis(p_water_temp, side = 2, labelAdj = 0.4)
+
+```
+
+```{r plot-water-temp_alt}
+
+# plot for all temp data points & box plot for water temp
+
+par(mar = c(0.1, 1.5, 0.5, 0.1), oma = c(2, 1, 0.1, 0.5))
+
+p_water_temp_bp <- Plot(
+  x = effort[["RelYear"]],
+  y = effort[["WaterTempC"]][, c("Min", "Max")],
+  subset = effort[["RelYear"]] >= 2005 &
+    effort[["WaterTempC"]][, "Min"] > 0
+)
+
+p_water_temp_bp$grid(xRng = TRUE)
+
+p_water_temp_bp$BoxPlot <- Map(f = function(x, y) {
+  
+  # for years in which we did not record water temp
+  if (all(is.na(y[["WaterTempC"]]))) return(NULL)
+  
+  # eventual color for outlier points to mitigate over-plotting
+  col <- rgb(red = 0, green = 0, blue = 0, alpha = 0.5)
+  
+  # bp variable generates boxplot stats (e.g., 25%, 50%, 75%)
+  bp <- boxplot(y[["WaterTempC"]], plot = FALSE)
+  
+  # display boxplot stats on plot
+  bxp(
+    z = bp,
+    add = TRUE,
+    at = x,
+    frame.plot = FALSE,
+    whisklty = 1,
+    whiskcol = "grey50",
+    boxcol = "grey50",
+    staplelty = 0,
+    outpch = 20,
+    outcex = 0.7,
+    outcol = col,
+    medcol = "grey30",
+    yaxt = "n",
+    xaxt = "n"
+  )
+  
+  # function output
+  # bp$stats
+  bp$n
+  
+}, effort[["RelYear"]], effort[["WaterCond"]])
+
+Axis(p_water_temp_bp, side = 1, labelAdj = 0.3, interval = 2)
+Axis(p_water_temp_bp, side = 2, labelAdj = 0.4)
+
+mtext(text = "Year", side = 1, line = 1.1)
+mtext(
+  text = expression(paste("Water temperature ", degree, "C")),
+  side = 2,
+  line = 1.2
+)
+
+# ******************************************************************************
+## below a test for plotting all data points with mean overlay (17-Jan-2020)
+# test <- Map(f = function(x, y) {
+#   if (all(is.na(y[["WaterTempC"]]))) return(NULL)
+#   # x <- rep(x, times = length(y[["WaterTempC"]]))
+#   points(
+#     jitter(rep(x, times = length(y[["WaterTempC"]])), amount = 0.15),
+#     y[["WaterTempC"]],
+#     pch = 1,
+#     cex = 0.9,
+#     # col = "grey50"
+#     col = rgb(0, 0, 0, 0.2)
+#   )
+#   
+#   points(x = x, y = mean(y[["WaterTempC"]], na.rm = T), col = 2, cex = 2)
+# }, effort$RelYear, effort$WaterCond)
+# ******************************************************************************
+
+```
+
+## Tagging Location
+
+Has favored Suisun & San Pablo bays, shift to Suisn beginning in 2007 (figure below)
+
+<!-- explain what `other` includes -->
+
+```{r plot-location}
+
+locations_bay <- grepl(
+  pattern = "SanPablo|Suisun",
+  x = dimnames(effort[["TagLoc"]])[[2]]
+)
+
+prop_loc <- prop.table(
+  cbind(
+    effort[["TagLoc"]][, locations_bay],
+    Other = rowSums(effort[["TagLoc"]][, !locations_bay])
+  ),
+  margin = 1
+)
+
+prop_loc <- cbind(
+  prop_loc,
+  SPSus = rowSums(prop_loc[, c("SanPablo", "Suisun")])
+)
+
+r <- dim(prop_loc)[[1]]
+
+sges <- list(
+  SanPablo = list(
+    y0 = rep(0, times = r),
+    y1 = prop_loc[, "SanPablo"],
+    col = "steelblue3"
+  ),
+  Suisun = list(
+    y0 = prop_loc[, "SanPablo"],
+    y1 = prop_loc[, "SPSus"],
+    col = "orange3"
+  ),
+  Other = list(
+    y0 = prop_loc[, "SPSus"],
+    y1 = rep(1, times = r),
+    col = "grey40"
+  )
+)
+
+p_location <- Plot(
+  x = effort[["RelYear"]],
+  y = seq(from = 0, to = 1, length.out = r),
+  adjUsr = 0.4
+)
+
+p_location$grid(xRng = TRUE)
+
+sges_add <- lapply(sges, FUN = function(s) {
+  segments(
+    x0 = p_location$data()[["x"]],
+    y0 = s[["y0"]],
+    y1 = s[["y1"]],
+    lwd = 5,
+    lend = 1,
+    col = s[["col"]]
+  )
+})
+
+Axis(p_location, side = 1, labelAdj = 0.3, interval = 5, offset = 1)
+Axis(p_location, side = 2, labelAdj = 0.4)
+
+mtext(text = "Year", side = 1, line = 1.5)
+mtext(text = "Fraction of net sets", side = 2, line = 1.75)
+
+col_lg <- vapply(sges, FUN = function(x) x[["col"]], FUN.VALUE = character(1L))
+
+legend(
+  x = p_location[["xrng"]][[2]],
+  y = p_location[["yrng"]][[2]] * 1.13,
+  legend = names(col_lg),
+  fill = col_lg,
+  ncol = length(col_lg),
+  xpd = TRUE,
+  xjust = 1,
+  border = NA,
+  bty = "n"
+)
+
+# section clean up
+rm(locations_bay, prop_loc, r, sges, sges_add, col_lg)
+
+```
+
+```{r plot-coord, eval=FALSE}
+
+# a possibility, but would be better with a map
+
+with(data = Tagging$Effort, expr = {
+  
+  plot(AvgLon, AvgLat, col = rgb(0,0,0,0.1), pch = 19)
+  
+})
+
+
+p_coord <- Plot(
+  data = Tagging[["Effort"]],
+  x = AvgLon,
+  y = AvgLat,
+  subset = AvgLat <= 38.2
+)
+
+points(p_coord, col = rgb(0,0,0,0.1), pch = 19)
+
+```
+
+## Tag Returns
+
+A major component of this mark-recapture study is angler tag returns. Every angler who returns a disc tag receives a commendation card and reward (separately and if applicable). A commendation card thanks the angler for contributing to the "betterment of fishing in California" and provides a bit of information about the fish (e.g., date and location tagged).
+
+We tend to process angler tag returns in batches (i.e., several to half dozen at a time). Rewards are paid within six to eight weeks of processing. Total annual payments vary but for the last 10+ years mostly have been between \$1,000 and \$4,000 (table below; see note 2 below). Year represents period in which the tag was processed, not return or release year.
+
+*Note1*: We only have tag processing data-time from ~October 2007 to present. Tags prior to which were processed but have no associated date-time stamp.
+
+*Note2*: Data for 2010 may include tags returned in 2008 and 2009. Without further investigation, it is unclear why reward payments were almost \$12,000.
+
+*Note3*: We are still processing tags returned in 2020.
+
+```{r returns}
+
+# to add field for return year
+Tagging$TagReturns$RetYear <- TagRetYear(
+  data = Tagging[["TagReturns"]],
+  dcap = DateCaptured2,
+  drel = RelDate
+)[["RetYear"]]
+
+returns <- Split(
+  data = Tagging[["TagReturns"]],
+  # subset = ,
+  vars = c(RelDate, Species, TagVal, DateCaptured2, RetYear),
+  splitVars = RelYear
+)
+
+# for desired data type
+returns$RelYear <- as.numeric(returns[["RelYear"]])
+
+```
+
+```{r returns-vars}
+
+returns$Count <- vapply(
+  returns[["Data"]],
+  FUN = nrow,
+  FUN.VALUE = numeric(1L),
+  USE.NAMES = FALSE
+)
+
+returns$FirstYear <- vapply(returns[["Data"]], FUN = function(d) {
+  sum(d[["RetYear"]] %in% 1)
+}, FUN.VALUE = numeric(1L), USE.NAMES = FALSE)
+
+returns$FirstYearWST <- vapply(returns[["Data"]], FUN = function(d) {
+  sum(d[["RetYear"]] %in% 1 & d[["Species"]] %in% "White")
+}, FUN.VALUE = numeric(1L), USE.NAMES = FALSE)
+
+returns$Payment <- vapply(returns[["Data"]], FUN = function(d) {
+  sum(d[["TagVal"]])
+}, FUN.VALUE = numeric(1L), USE.NAMES = FALSE)
+
+returns$PaymentFY <- vapply(returns[["Data"]], FUN = function(d) {
+  b <- d[["RetYear"]] %in% 1
+  sum(d[b, "TagVal"])
+}, FUN.VALUE = numeric(1L), USE.NAMES = FALSE)
+
+```
+
+```{r reward-payment}
+
+reward <- factor(
+  Tagging[["RewardPayment"]][["Reward"]],
+  levels = c("5", "10", "20", "50", "100", "150", "Payment"),
+  labels = c(paste0("$", c("5", "10", "20", "50", "100", "150")), "Payment"),
+  exclude = 0
+)
+
+tbx <- xtabs(
+  formula = NumProc ~ ProcYear + reward,
+  data = Tagging[["RewardPayment"]]
+)
+
+dol <- aggregate(
+  formula = Payment ~ ProcYear,
+  data = Tagging[["RewardPayment"]],
+  FUN = sum
+)
+
+tbx[, "Payment"] <- paste("$", (format(dol[["Payment"]], big.mark = ",")))
+
+knitr::kable(tbx, format = "markdown", align = "r")
+
+# section clean up
+rm(dol, tbx, reward)
+
+```
+
+Below we display annual return rate for disc tags returned within the first year. We did not consider reward value for this exercise. A more in-depth approach should consider reward value and some adjustment for non-response. *Note*: returns for 2019 are still being processed. So the value displayed likely will increase.
+
+```{r return-rate}
+
+par(mar = c(0.25, 2.3, 0.25, 0.5), oma = c(2, 1, 0.5, 0.2))
+
+p_ret_rate <- Plot(
+  x = returns[["RelYear"]],
+  y = returns[["FirstYearWST"]] / catch[["DiscTagWST"]],
+  subset = returns[["RelYear"]] != 1955,
+  adjUsr = 0.4
+)
+
+points(p_ret_rate, xRng = TRUE)
+
+Axis(p_ret_rate, side = 1, labelAdj = 0.3, interval = 5, offset = 1)
+# p_rr_y <- Axis(p_ret_rate, side = 2, labelAdj = 0.4, format = TRUE)
+p_rr_y <- Axis(p_ret_rate, side = 2, labelAdj = 0.4)
+
+mtext(text = "Year", side = 1, line = 1.2)
+# mtext(text = p_rr_y$AxisTitle(var = "Return rate"), side = 2, line = 1.2)
+mtext(text = "Return rate", side = 2, line = 2.1)
+
+```

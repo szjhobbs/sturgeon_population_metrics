@@ -1,0 +1,430 @@
+---
+title: |
+  |  White Sturgeon Abundance Estimates
+  |  from Harvest and Harvest Rate
+author: "CDFW"
+date: ''
+output:
+  pdf_document: default
+  html_document: default
+  github_document: default
+header-includes: \usepackage{float} \usepackage{caption} \captionsetup[figure]{labelformat
+  = empty}
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.pos = 'H'
+)
+
+knitr::opts_knit$set(root.dir = "~/RProjects/SturgeonPopMetrics/")
+
+```
+
+```{r libraries}
+
+library(ggplot2)
+library(knitr)
+# library(reshape2)
+
+```
+
+```{r data}
+
+# load all .rds data from card & tagging directories
+
+# list.files(path = "data/card", pattern = ".rds$")
+# list.files(path = "data/tagging", pattern = ".rds$")
+
+# sourcing functions here to load data - likely will not use these functions
+# elsewhere in this file
+
+source(file = "source/functions_load_files.R")
+
+LoadRdsFiles(dirName = "data/card")
+LoadRdsFiles(dirName = "data/tagging")
+
+SlotChanges <- read.csv(
+  file = "data/SlotChanges.csv",
+  header = TRUE,
+  stringsAsFactors = FALSE
+)
+
+# clean up - functions for loading not needed
+rm(list = ls.str(mode = "function"))
+
+```
+
+```{r source-files}
+
+# source(file = "source/source_stu_hr.R")
+source(file = "source/source_stu_mark-recap.R")
+source(file = "source/functions_global_general.R")
+source(file = "source/functions_global_record_count.R")
+source(file = "source/functions_global_data_subset.R")
+# source(file = "source/functions_cc_survival_rate.R")
+# source(file = "source/methods_len_freq.R")
+# source(file = "source/methods_age_freq.R")
+# source(file = "source/source_stu_cc.R")
+source(file = "source/source_alt_abundance.R")
+
+```
+
+```{r combine-card}
+
+# this section combines the ALDS and archived (2007-2011) data
+
+card_alds <- subset(
+  SturgeonAlds,
+  select = -MonthF
+)
+
+# adds Document (or Card) number - needed for reconciliation with tag return
+# data
+card_alds <- merge(
+  card_alds,
+  RetCardsAlds[, c("LicenseReportID", "DocumentNumber")],
+  by = "LicenseReportID"
+)
+
+# adding date field for rbind()ing with 07 data
+card_alds$DateOfCapture <- as.POSIXct(
+  paste(
+    card_alds$ItemYear,
+    card_alds$Month,
+    card_alds$Day,
+    sep = "-"
+  ),
+  format = "%Y-%m-%d"
+)
+
+get_alds_cols <- c(
+  "DocumentNumber", "ItemYear", "DateOfCapture", "LocCode",
+  "SturgeonType", "Fate", "Length", "RewardDisk", "TL_cm", "FL_cm"
+)
+
+# subsetting & ordering for rbind()ing below
+# card_alds <- card_alds[, c(11, 3, 12, 6, 9, 10, 7, 8)]
+card_alds <- card_alds[, get_alds_cols]
+
+# card_arch <- subset(
+#   Sturgeon0711#,
+#   # select = -c(SturgeonID, CorR)
+#   # select = -c(CorR)
+# )
+
+# alias to avoid changing code below - fields SturgeonID, CorR are not in
+# Sturgeon0711 so subsetting is not needed (28-Apr-2017)
+card_arch <- Sturgeon0711
+
+# set column names equal for rbind()ing
+colnames(card_arch) <- colnames(card_alds)
+
+card_all <- rbind(
+  card_arch,
+  card_alds
+)
+
+# clean up
+rm(card_arch, card_alds, get_alds_cols)
+
+```
+
+```{r stats}
+
+# adding year field for convenience
+Effort$RelYear <- as.numeric(format(Effort$RelDate, "%Y"))
+
+# rescue locations from April 2011 which we don't want for this analysis
+drop_locations <- c("Fremont Weir", "Tisdale Bypass")
+
+# get start, mid, and end dates
+dates <- ApplyFunToDf(
+  Effort,
+  !(Location %in% drop_locations) &
+    RelYear > 2005,
+  splitVars = "RelYear",
+  FUN = TaggingDates
+)
+
+# get length category stats for White Sturgeon from 2006-present (added
+# 05-Apr-2016 total length cutoff in keeping with IEP article "Estimating Annual
+# Abundance of White Sturgeon 85-116 and ≥ 169 Centimeters Total Length")
+lc_stats <- ApplyFunToDf(
+  SturgeonAll,
+  Species %in% "White" & RelYear > 2005 & TL >= 85,
+  splitVars = "RelYear",
+  FUN = GetLcStats
+)
+
+# clean up
+rm(drop_locations)
+
+```
+
+```{r abundance, comment=''}
+
+# calculate alternative abundance estimates for White Sturgeon from
+# 2007-present; output is a list so use GetAltAbundance() for cleaner display of
+# abundance estimates with CIs
+alt_abundance <- CalcAltAbundance(
+  datHarvest = GetWstCount(datCard = card_all, dates = dates),
+  datLcStats = lc_stats
+)
+
+# for convenience - variable used within narrative
+max_year <- max(as.numeric(alt_abundance$Harvest$RelYear))
+
+# tabular display of annual stats (e.g., harvest rate, tag returns) along with
+# abundance estimates with Wald-type CIs and log-normal based CIs
+stats_abund <- GetAltAbundance(dat = alt_abundance)
+
+```
+
+### Background
+Herein are estimates of White Sturgeon abundance calculated using harvest (from Sturgeon Report Card) and harvest rate (from mark-recapture data). For more information and details regarding development of this method, please click [Abundance](https://nrm.dfg.ca.gov/FileHandler.ashx?DocumentId=43532).
+
+We estimate abundance directly for legal-sized White Sturgeon, which from 2007 to present is 117-168 cm TL (centimeters total length; though from 2013 to present the equivalent is measured in fork length: 102-152 cm FL). Using proportions of catch and ratios, we estimate abundance for both sub-legal and over-legal sized White Sturgeon.
+
+Note: any previous estimates have been updated using most-current (i.e., from `r Sys.Date()`) Report Card and mark-recapture data.
+
+### Assigning Length Category
+We assigned White Sturgeon --- caught during our mark-recapture field work --- to a length category of either 'sub' (sub-legal), 'leg' (legal), or 'ovr' (over-legal) based on measured length (total or fork) and data in the table below. The slot limit was instituted in 1990, thus sub-legal fish are below the slot limit and over-legal fish are above the slot limit. For this purpose, we use data in the last two rows of the table below.
+
+```{r slot}
+
+# changing Inf to NA for table display
+SlotChanges[1, 5] <- NA
+
+# outpout slot table for info on how LenCat was set
+kable(
+  SlotChanges,
+  format = "pandoc",
+  align = 'c',
+  row.names = FALSE,
+  col.names = c(
+    "From Year",
+    "To Year",
+    "Species",
+    "Min Length (cm)",
+    "Max Length (cm)",
+    "Length Type"
+  ),
+  caption = "Table of legal-size ranges for sturgeon from
+  1954 to present. Note: in 2013 it became illegal to take
+  Green Sturgeon. Species W = White & G = Green"
+)
+
+# reseting to Inf
+SlotChanges[1, 5] <- Inf
+
+```
+
+For this purpose, we did not model length frequency distributions (as in [Gingras and DuBois 2015](https://nrm.dfg.ca.gov/FileHandler.ashx?DocumentId=114809)). Proportions and ratios were derived from non-modeled (i.e., straight) catch (see table below, where 'N' denotes count and 'P' denotes proportion). "SubToLeg" and "OvrToLeg" are ratios derived from the appropriate proportions. Also, per methodology described in [Gingras and DuBois 2015](https://nrm.dfg.ca.gov/FileHandler.ashx?DocumentId=114809), we limited White Sturgeon length to $\geqslant$ 85 cm TL. For example, in 2007 393 White Sturgeon were categorized as "sub," with n=34 < 85 cm TL. This yields NSub = 359.
+
+Notes:
+
+1. NAll = NSub + NLeg + NOvr
+2. NUnk = number unknown
+3. Proportions (P) calculated as N(Sub or Leg or Ovr) / NAll
+
+```{r proportions}
+
+#\u2265 = ≥
+
+# display count and proportions table
+kable(
+  lc_stats,
+  format = "pandoc",
+  col.names = c(
+    "Year", "NSub", "NLeg", "NOvr",
+    "NAll", "NUnk", "PSub", "PLeg",
+    "POvr", "SubToLeg", "OvrToLeg"
+  ),
+  caption = paste0(
+    "Count and proportion of White Stureon ", 
+    "from mark-recapture data, ",
+    "where length limited to >= 85 cm TL"
+  )
+)
+
+```
+
+### Harvest
+Since 2007, anglers fishing for sturgeon in California waters are required to report catch on a Sturgeon Fishing Report Card (Card). Annually, the Card provides --- among other information --- numbers of White Sturgeon kept (or harvest, ${H}$). Per developed methodology, we count harvest for three periods (start, middle, end) based on beginning and ending dates of our field season (August-October). The rationale is to use harvest more in line with harvest rate (the estimates of which use first-year tag returns). Because we have found harvest does not vary much by period (see table below), for abundance estimates we used harvest from the 'start' period.
+
+Notes:
+
+1. Each period has a 'from' and 'to' date (denoting one year) within which harvest is counted.
+2. Harvest for 2006 not over a complete year, as Card not instituted until 2007.
+3. Harvest for `r max_year` is preliminary, as data from `r  max_year + 1` Card not available until early `r max_year + 2`.
+4. Harvest data are in BDSturgeonReportCard database (2007-2011) & ALDS (on-line) database (2012-present)
+
+```{r harvest}
+
+# display harvest dataframe
+kable(
+  alt_abundance$Harvest,
+  format = "pandoc",
+  #align = 'c',
+  row.names = FALSE,
+  col.names = c(
+    "Year",
+    "Period",
+    "From",
+    "To",
+    "Harvest"
+  ),
+  caption = "Harvest of White Sturgeon as reported on
+  Cards from 2006-present. Harvest for 2006 included FIO
+  and is partial, as Card not instituted until 2007.",
+  format.args = list(big.mark = ',')
+)
+
+```
+
+### Harvest Rate
+We estimate harvest rate ($\hat{h}$) annually using angler tag returns (Ret or returns) and CDFW tag releases (Rel or releases). To minimize bias, we only use first-year tag returns (i.e., tagged fished caught within one year of release; denoted ${_f}$ in equation below). Below are harvest rate estimates for White Sturgeon legal-sized when tagged. The returns and releases presented in the table are for this demographic. Period, dates (from & to), and harvest included in table for convenience.
+
+$\hat{h} = \frac{Ret_f}{Rel}$
+
+Notes:
+
+1. Rate for 2006 provided for information only.
+2. Rate for `r max_year` is preliminary and will change with future data (returns).
+3. Returns (Ret) includes tags physically returned to us by angler and tag reported on Cards but not physically returned (Ret & Rel data are in BDSturgeonTagging database)
+4. We release reward tags (current values: $50; $100; $150) but do not consider reward here (i.e., for the harvest rate estimate). See [Gingras and DuBois 2014](https://nrm.dfg.ca.gov/FileHandler.ashx?DocumentId=74460) for further information regarding bias in annual harvest rate estimates. 
+
+```{r harvest-rate}
+
+# display harvest rate dataframe
+kable(
+  stats_abund$AnnualStats,
+  format = "pandoc",
+  digits = 3,
+  #align = 'c',
+  row.names = FALSE,
+  col.names = c(
+    "Year",
+    "Period",
+    "From",
+    "To",
+    "Harvest",
+    "Ret",
+    "Rel",
+    "Rate"
+  ),
+  caption = "Harvest rate estimates of White Sturgeon
+  legal-sized when tagged (2006-present). Note: rates
+  for 2016 will change with further data.",
+  format.args = list(big.mark = ',')
+)
+
+```
+
+### Abundance Estimates
+
+Below are (alternative) abundance estimates ($\hat{N}$) for White Sturgeon for the three length categories. Provided herewith are standard error (SE), Wald-type confidence intervals (CI), and log-normal confidence intervals (lower = LNLB, upper = LNUB). (Confidence interval algorithms provided courtesy of K. Newman & L. Mitchell of USFWS.)
+
+**Abundance equations**  
+$\hat{N}_{leg} = \frac{H}{\hat{h}}$  
+$\hat{N}_{sub} = \hat{N}_{leg} * SubToLeg$  
+$\hat{N}_{ovr} = \hat{N}_{leg} * OvrToLeg$  
+
+**Standard error and variance**  
+${SE}({\hat{N}_{leg}}) = \frac{H}{\sqrt{\hat{h}^{3} * {Rel}}}$  
+${VAR}({\hat{N}_{leg}}) = {SE}({\hat{N}_{leg}})^2$  
+
+${SE}({\hat{N}_{sub}}) = \sqrt{{VAR}({\hat{N}_{leg}}) * SubToLeg}$  
+${SE}({\hat{N}_{ovr}}) = \sqrt{{VAR}({\hat{N}_{leg}}) * OvrToLeg}$  
+
+**Wald-type confidence interval (CI)**  
+${CI}(\hat{N}) = {\pm}{Z} * {SE}(\hat{N})$  
+
+**Log-normal confidence intervals (lower & upper bounds)**  
+${LNLB}(\hat{N}) = \hat{N} * exp({-Z} * {\frac{SE(\hat{N})}{\hat{N}}})$  
+${LNUB}(\hat{N}) = \hat{N} * exp({Z} * {\frac{SE(\hat{N})}{\hat{N}}})$  
+
+```{r abundance-tabular}
+
+# for display purpose in table below
+stats_abund$Abundance$Year <- as.character(stats_abund$Abundance$Year)
+
+# display abundance estimates
+kable(
+  stats_abund$Abundance,
+  format = "pandoc",
+  digits = 0,
+  #align = 'c',
+  row.names = FALSE,
+  col.names = c(
+    "Year",
+    "Category",
+    "N",
+    "SE",
+    "CI",
+    "LNLB",
+    "LNUB"
+  ),
+  caption = "Annual White Sturgeon abundance estimates by size category",
+  format.args = list(big.mark = ',')
+)
+
+# resetting numeric for plotting
+stats_abund$Abundance$Year <- as.numeric(stats_abund$Abundance$Year)
+
+```
+
+\pagebreak
+
+Plot of abundance estimates with log-normal confidence intervals. Note: estimates for `r max(stats_abund$Abundance$Year)` available ~`r max(stats_abund$Abundance$Year) + 2`.
+
+```{r graphics, fig.height=7, fig.width=5, fig.align='center', fig.cap="White Sturgeon abundance estimates from harvest and harvest rate with log-normal confidence intervals; note: separate y-axis for each category"}
+
+stats_abund$Abundance$LenCat <- factor(
+  stats_abund$Abundance$LenCat,
+  levels = c(sub = "sub", leg = "leg", ovr = "ovr")
+)
+
+year_range <- range(stats_abund$Abundance$Year)
+
+# possilbe plotting option (change data source)
+plt <- ggplot(
+  data = stats_abund$Abundance[stats_abund$Abundance$Year < year_range[2], ],
+  mapping = aes(x = as.character(Year), y = N)
+)
+
+plt +
+  geom_bar(stat = "identity", fill = "black") +
+  #facet_wrap(facets = ~LenCat, scales = "free_y", ncol = 1)
+  facet_grid(facets = LenCat ~ ., scales = "free_y") +
+  geom_errorbar(
+    mapping = aes(ymax = LNUB, ymin = LNLB),
+    colour = "steelblue",
+    size = 0.5,
+    width = 0.1
+  ) +
+  scale_y_continuous(
+    name = "Abundance (x 1000)",
+    #name = quote(Abundance * 10^3),
+    labels = function(x) x / 1000,
+    expand = c(0.02, 0)
+  ) +
+  xlab("Year")
+
+
+  # scale_y_continuous(
+  #   minor_breaks = 5,
+  #   labels = function(x) x / 1000
+  # ) +
+  #ylab("Abundance (x 1000)")
+
+```
+
+***
+Report ran: `r Sys.time()`  
+End of report

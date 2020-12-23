@@ -1,0 +1,588 @@
+---
+output: html_document
+params:
+  sims:
+    label: "Simulations"
+    value: 1000
+    input: numeric
+    min: 1000
+    max: 1000000
+    step: 1000
+  abun:
+    label: "Total Abundance"
+    value: 48000
+    input: slider
+    min: 1000
+    max: 500000
+    step: 100
+  fracFem:
+    label: "Fraction Females"
+    value: 0.50
+    input: slider
+    min: 0.20
+    max: 0.80
+    step: 0.05
+  mature:
+    label: "Maturity"
+    value: 0.15
+    input: numeric
+    min: 0.10
+    max: 0.25
+    step: 0.05
+  recruit:
+    label: "Recruitment"
+    value: 5
+    input: slider
+    min: 1
+    max: 20
+    step: 1
+  agesHarvest:
+    label: "Ages (harvest)"
+    value: !r c(10, 15)
+    input: slider
+    min: 5
+    max: 20
+    step: 1
+  surv:
+    label: "Survival Rate"
+    value: !r NA
+    input: numeric
+    min: 0.10
+    max: 0.95
+    step: 0.05
+  harv:
+    label: "Harvest Rate"
+    value: !r NA
+    input: numeric
+    min: 0
+    max: 0.30
+    step: 0.01
+  age0:
+    label: "Age-0"
+    value: !r NA
+    input: numeric
+    min: 60000000
+    max: 250000000
+    step: 1000000
+  d:
+    label: "Age Data"
+    value: trammel_catch
+    input: select
+    choices: [trammel_catch]
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_knit$set(root.dir = "~/RProjects/SturgeonPopMetrics/")
+
+```
+
+## Introduction
+
+
+## Libraries
+
+We load the `spopmodel` package, currently available on GitHub. For now (`r Sys.Date()`), this is the only package required.
+
+```{r load-libraries} 
+
+library(spopmodel)
+# library(package)
+
+```
+
+```{r load-data}
+
+# looking for an easier way to use internal data from `params`; for now this
+# will suffice might needt to implement `if` or `switch` to select other
+# datasets (05-Aug-2019)
+
+# data(params$d, package = "spopmodel")
+d <- get(
+  params[["d"]],
+  pos = which(search() %in% "package:spopmodel")
+)
+
+```
+
+```{r fish-gte190, eval=TRUE}
+
+bool_gte190 <- d[["FL"]] >= 190
+
+bool_ageNA <- is.na(d[["Age"]])
+
+sum(bool_gte190 & bool_ageNA)
+
+d[bool_gte190 & bool_ageNA, "Age"] <- 19
+
+# verification
+# d[bool_gte190, ]
+
+# clean up
+rm(bool_gte190, bool_ageNA) 
+
+```
+
+#### Length Frequency
+
+```{r len-freq}
+
+len_freq <- Frequency(d[["FL"]], binWidth = 5)
+
+unlist(len_freq$xstats())
+
+```
+
+```{r plot-len_freq}
+
+plot(len_freq, xlab = "Length")
+
+```
+
+#### Age Frequency
+
+```{r age-freq}
+
+ages <- AgeEach(
+  data = d,
+  len  = FL,
+  age  = Age,
+  lenBreaks = len_freq[["breaks"]]
+)
+
+age_freq <- table(ages[["Ages"]], dnn = NULL)
+
+# as a possible check
+# sum(age_freq)
+age_freq
+
+```
+
+#### Mean Length-at-Age
+
+```{r mean-len-age}
+
+# get mean-length-at-age given lengths with assigned ages
+mean_len_age <- aggregate(
+  d[["FL"]],
+  # by = list(Age = d$Age),
+  by = d["Age"],
+  FUN = mean
+)
+
+# for convenience
+colnames(mean_len_age)[2] <- "MeanFL"
+
+# uncomment to display if desired
+# mean_len_age
+
+```
+
+```{r plot-mla}
+
+# to diplay length given age along with mean-length-at-age
+
+plot(
+  x = jitter(d[["Age"]]),
+  y = d[["FL"]],
+  pch = 19,
+  col = "grey70",
+  las = 1,
+  ylab = "Length",
+  xlab = "Age"
+)
+
+points(mean_len_age, pch = "+", col = "darkred")
+
+```
+
+#### Age Distribution
+
+```{r age-dist}
+
+# establishes age distribution given input from params
+
+age_distribution <- AgeDist(
+  ageFreq = age_freq,
+  abund = params[["abun"]],
+  fracFemale = params[["fracFem"]]
+)
+
+# for later analyses
+est_abundance <- age_distribution[["EstAgeAbund"]]
+
+```
+
+```{r log-lin-abun}
+
+yval <- log(as.vector(est_abundance))
+xval <- as.numeric(names(est_abundance))
+
+# log-linear abundance to predict age 1-2 abundance
+mod <- lm(yval ~ xval)
+
+```
+
+```{r plot-log-lin-abun}
+
+plot(
+  x = xval,
+  y = yval,
+  type = "b", 
+  col='grey60',
+  xlab = "Age",
+  ylab = "log(EstAbund)",
+  panel.first = abline(mod, col = "blue")
+)
+
+# clean up
+rm(xval, yval)
+
+```
+
+Use model to predict younger ages
+
+```{r predict-young-fish}
+
+age1_2 <- exp(predict(object = mod, newdata = list(xval = c(1, 2))))
+
+females <- c(
+  age1_2 * age_distribution[["FracFemale"]],
+  age_distribution[["CountFemByAge"]]
+)
+
+```
+
+#### Spawning Probability
+
+```{r mean-age-vars}
+
+# subset of age > 9
+bool_mlaa_gt9 <- mean_len_age[["Age"]] > 9  
+
+mean_len <- mean_len_age[bool_mlaa_gt9, "MeanFL"]
+age_at_len <- mean_len_age[bool_mlaa_gt9, "Age"]
+
+```
+
+```{r p-spawn}
+
+p_spawn <- SpawningProb(
+  len = mean_len,
+  age = age_at_len,
+  mature = params[["mature"]]
+)
+
+# create dataframe to be used in simulations
+prob_spawn2 <- rbind(
+  data.frame(Age = 0:9, Prob = 0, Err = 0),
+  p_spawn[, c("Age", "Prob", "Err")]
+)
+
+```
+
+#### Age Distribution (complete)
+
+```{r age-0}
+
+# Devore's (et al. 1995) equation to calculate number of eggs based on fork
+# length
+
+eggs_female <- 0.072 * mean_len^2.94
+
+age0 <- sum(p_spawn[["Prob"]] * females[10:19] * eggs_female)
+
+if (!is.na(params[["age0"]])) age0 <- params[["age0"]]
+
+```
+
+```{r age-dist-complete}
+
+age_dist2 <- data.frame(
+  Age = as.numeric(c(0, names(females))),
+  Freq = c(age0, unname(females)),
+  row.names = NULL
+)
+
+```
+
+#### Egg Count
+
+```{r num-eggs}
+
+# egg count age-10 to age-19
+egg_count <- EggCount(len = mean_len, age = age_at_len)
+
+num_eggs <- rbind(
+  data.frame(Age = 0:9, Count = 0, Err = 0),
+  egg_count[, c("Age", "Count", "Err")]
+)
+
+```
+
+#### Survival Probability
+
+```{r prob-surv-inputs}
+
+# to establish range of exploitation rates used in model; hard-coded for now but
+# may allow user input with `params` variable (05-Aug-2019)
+mus <- seq(from = 0, to = 0.30, by = 0.01)
+
+# for survival & harvest rates will use defaults unless changed by user
+estS <- formals(SurvivalProb)[["estS"]]
+estMu <- formals(SurvivalProb)[["estMu"]]
+if (!is.na(params[["surv"]])) estS <- params[["surv"]]
+if (!is.na(params[["harv"]])) estMu <- params[["harv"]]
+# if (is.na(params[["surv"]])) params[["surv"]] <- estS
+# if (is.na(params[["harv"]])) params[["harv"]] <- estMu 
+
+# because [["agesHarvest"]] is only length 2 (i.e., range)
+agesMu <- params[["agesHarvest"]][1]:params[["agesHarvest"]][2]
+
+```
+
+```{r prob-surv}
+
+# for use in simulations (next steps)
+prob_surv <- SurvivalProb(
+  ages = prob_survival[["age"]],
+  sRate = prob_survival[1:3, "prob"],
+  sRateErr = prob_survival[1:3, "se"],
+  mu = mus,
+  agesMu = agesMu,
+  estS = estS,
+  estMu = estMu,
+  methodSB = TRUE
+)
+
+```
+
+## Simulations
+
+Number of simulations: `r params[["sims"]]`.
+
+```{r sims-prob-spawn, eval=TRUE}
+
+sims_prob_spawn <- Simulations(
+  data  = prob_spawn2,
+  prob  = Prob,
+  std   = Err,
+  iters = params[["sims"]],
+  type  = "spawning"
+)
+
+```
+
+```{r sims-num-eggs, eval=TRUE}
+
+sims_num_eggs <- Simulations(
+  data  = num_eggs,
+  prob  = Count,
+  std   = Err,
+  iters = params[["sims"]],
+  type  = "numeggs"
+)
+
+```
+
+```{r sims-prob-surv, eval=TRUE}
+
+sims_prob_surv <- mapply(
+  FUN = Simulations,
+  prob_surv,
+  MoreArgs = list(
+    prob  = "Prob",
+    std   = "Err",
+    recruitment = params[["recruit"]],
+    iters = params[["sims"]],
+    type  = "survival"
+  ),
+  SIMPLIFY = FALSE
+)
+
+```
+
+```{r sims-fecund}
+
+# either or; should be the same ********
+# age_distribution[["FracFemale"]]
+# params[["fracFem"]]
+# **************************************
+
+sims_fecund <- sims_num_eggs * sims_prob_spawn * params[["fracFem"]]
+
+# hard-coding indices susceptible to problems if data change
+final_age <- lapply(prob_surv, FUN = "[", 20, 2:3)
+
+```
+
+## Population Growth Rate
+
+```{r pop-proj}
+
+mu_levels <- setNames(
+  object = names(sims_prob_surv),
+  nm = names(sims_prob_surv)
+)
+
+pop_proj <- lapply(mu_levels, FUN = function(x) {
+  PopProjections(
+    fSims = sims_fecund,
+    sSims = sims_prob_surv[[x]],
+    mn = final_age[[x]][["Prob"]],
+    sdev = final_age[[x]][["Err"]],
+    ageFreq = age_dist2[["Freq"]],
+    # ageFreq = age_dist[["freq"]],
+    period = 20
+    # period = 40
+  )
+})
+
+pp_names <- dimnames(pop_proj[["mu_0.01"]])[[1]]
+pp_length <- length(pop_proj)
+pchanges_n <- unique(
+  vapply(
+    pop_proj[["mu_0.01"]]["pop.changes", ],
+    FUN = length,
+    FUN.VALUE = numeric(1L)
+  )
+)
+
+```
+
+`pop_proj` length = `r pp_length`
+
+each element in `pop_proj` contains `r paste0(pp_names, collapse = "; ")`
+
+`pop.changes` in `pop_proj` has `r pchanges_n` values
+
+Using `mu` = 0.01 as an example, we take the mean log of `pop.changes`. The n is given by `params[["sims"]]` or `r params[["sims"]]`
+
+```{r pop-proj-explained}
+
+mll <- vapply(pop_proj[["mu_0.01"]]["pop.changes", ], FUN = function(x) {
+  mean(log(x))
+}, FUN.VALUE = numeric(1L))
+
+plot(exp(mll), las = 1)
+mtext(text = sprintf("n=%s", length(mll)), adj = 0)
+abline(h = exp(mean(mll)), col = "orange2")
+abline(h = exp(quantile(mll, probs = c(0.025, 0.975))), col = "grey40")
+abline(
+  h = c(
+    exp(mean(mll)) - (sqrt(exp(var(mll)) / length(mll))) * 1.96,
+    exp(mean(mll)) + (sqrt(exp(var(mll)) / length(mll))) * 1.96
+  ),
+  col = c(3, 4)
+)
+
+```
+
+```{r lambda-mu}
+
+lambda_mu <- lapply(mu_levels, FUN = function(x) {
+  mu <- as.numeric(sub(pattern = "mu_", replacement = "", x = x))
+  out <- Lambda(popChanges = pop_proj[[x]]["pop.changes", ])
+  out[["MuLevel"]] <- mu
+  out
+})
+
+lambda_mu <- do.call(what = rbind, args = lambda_mu)
+rownames(lambda_mu) <- NULL
+
+```
+
+```{r lambda-bounds}
+
+# x & y values for drawing polygon as lower & upper bounds
+poly_list = list(
+  x = c(
+    lambda_mu[["MuLevel"]][1],
+    lambda_mu[["MuLevel"]],
+    rev(lambda_mu[["MuLevel"]][-1])
+  ),
+  y = c(
+    lambda_mu[["QuantLow"]][1],
+    lambda_mu[["QuantUpp"]],
+    rev(lambda_mu[["QuantLow"]][-1])
+  )
+)
+
+```
+
+```{r calc-ci}
+
+ci <- with(data = lambda_mu, expr = {
+  
+  se <- sqrt(VarLambda / NumSims)
+  
+  # where 0.05 is alpha
+  se * qnorm(1 - 0.05 / 2)
+  
+})
+
+```
+
+```{r plot-lambda}
+
+# xlab = expression(bold(paste('Exploitation Rate ( ',mu,' )'))),
+#   ylab = expression(bold(paste('Growth Rate ( ', lambda,' )'))),
+#   main = expression(bold(paste('Growth Rate (',lambda,') vs Exploitation Rate (',mu,')')))
+
+# create the plot with appropriate limits
+plot(
+  x = range(lambda_mu[["MuLevel"]]),
+  y = range(lambda_mu[, c("QuantLow", "QuantUpp")]),
+  type = "n",
+  panel.last = abline(h = 1, col = "darkorange", lty = 1, lwd = 0.25),
+  panel.first = polygon(poly_list, col = "grey90", border = NA)
+)
+
+# add data (mean lambda over mu)
+lines(
+  x = lambda_mu[["MuLevel"]],
+  y = lambda_mu[["MeanLambda"]],
+  col = 'grey40',
+  lty = 1,
+  lwd = 2
+)
+
+lines(
+  x = lambda_mu[["MuLevel"]],
+  y = lambda_mu[["MeanLambda"]] + ci,
+  col = 'red',
+  lty = 1,
+  lwd = 2
+)
+
+lines(
+  x = lambda_mu[["MuLevel"]],
+  y = lambda_mu[["MeanLambda"]] - ci,
+  col = 'blue',
+  lty = 1,
+  lwd = 2
+)
+
+
+
+```
+
+Parameters list
+
+```{r params-display}
+
+# params[[""]]
+
+Map(function(x, nm) {
+  if (all(!is.na(x))) return(x)
+  
+  # the 3 NAs are estS, estMu, & age0
+  if (nm %in% "surv") return(estS)
+  if (nm %in% "harv") return(estMu)
+  
+  age0
+  
+}, params, names(params))
+
+```
+

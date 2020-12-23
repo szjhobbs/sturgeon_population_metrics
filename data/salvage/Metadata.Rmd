@@ -1,0 +1,40 @@
+---
+
+
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_knit$set(root.dir = "~/RProjects/SturgeonPopMetrics/data")
+
+knitr::opts_chunk$set(echo = FALSE)
+
+```
+
+TODO (25-Jan-2019):
+(1) describe DailyOps data from 1980-2016 (from Jerry's Excel file "SWP and CVP Dail Acre Feet and Minutes Pumping_1980 through 2016_revised 11-13-17.xlsx"), etc.
+(2) describe Catch data from 1980 (again culled by Jerry)
+(3) look to 'verification-index.Rmd' for subsetting thoughts (e.g., not using pred removal 9999 or catch where daily ops variables not records)
+
+```{r load-libraries}
+
+library(sportfish)
+# library(package)
+
+```
+
+```{r load-data}
+
+ReadRDSFiles(fileDir = "salvage")
+
+```
+
+```{r record-count}
+
+rc <- vapply(ls(), FUN = function(x) nrow(get(x)), FUN.VALUE = numeric(1L))
+
+knitr::kable(as.data.frame(rc), col.names = "Records")
+
+```
+
+

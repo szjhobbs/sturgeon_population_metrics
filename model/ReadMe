@@ -1,0 +1,34 @@
+
+30-July-2020
+
+This computational model is likely the costliest such one produced by CDFW. A grad student's master's thesis and many hours of CDFW staff time get us to this point (i.e., a somewhat useable application). After all that and in my humble opinion, the model provides little additional information (i.e., nothing we didn't already know or suspected). It is a complicated model (perhaps needlessly so) and requires many assumptions due to lack of availble data for SFE-based White Sturgeon. Here, I will attempt to describe quirks, assumptions, oddities, and (or) curiosities of this White Sturgeon Population Model.
+
+The model requires four datasets: age distribution (age-stratified female abundance); age-stratified survival probability (over varying exploitation levels); age-stratified spawing probability; and age-stratified egg count. The model --- as received by CDFW --- hard-coded these datasets along with algorithms in a single file (find 'corrected_transient_midfecund_current.R'). Further, other operations (e.g., gear selectivity) were done "behind the scenes" in various files (find 'size_selective_data.xlsx'; 'mortality.txt'; 'Fecundity.R'). In this format, it is impossible --- without tedious editing --- to observe changes in model output as one manipulates inputs.
+
+Age Distribution
+
+Age ranges from 0-19. Older fish (> 19) were few in the CDFW data set (2014-2016), so thus the limit at 19. Ages 3-19 come via aging (fin ray) a portion of White Sturgeon collected during CDFW trammel net operations 2014-2016.
+
+A gear selectivity model was applied to CDFW data (2014-2016) using binned (5 cm) length frequency by mesh size (6-, 7-, 8-inch; find file 'size_selective_data.xlsx' tab 'bi.norm' column F). Model developer used equal weighting of gear (when 8" mesh is fished at twice the effort as the other two) and starting values to the gear selectivity model not well defined (i.e., not sure how values of "c(40, 6, 10, 10, 1)" were chosen). The result is an adjusted catch containing more larger fish than had model developer used mesh weight of `c(1, 1, 2)` & starting values in-line with mean length by mesh (for example: `c(97.6, 25.2, 190.3, 25.2, 0.62)`).
+
+At any rate, length frequeny was adjusted upward given relative selectivity. Next, ages were assigned using age-length key developed with extent data. Age frequency (ages 3-19) post gear selectivity was created (find 'size_selective_data.xlsx' tab 'Abundance' columns B & C). Using pop estimate 48K and assuming sex ratio 0.5, number of females was generated (column E; also find 'corrected_transient_midfecund_current.R' variable 'initial_age_dist' ages 3-19).
+
+Curiously, age-1 and age-2 frequencies were predicted (extrapolated) via log-linear regression given frequency on age (3-19), a relation that is not at all linear (even log transformed). Employing the sex ratio, this yielded age-1 & age-2 females roughly 4 times greater than ages 3,4. 
+
+Arriving at age-0 frequency (i.e., potential of eggs / year) is multi-stepped, the formulas of which can be found in 'size_selective_data.xlsx' tab Abundance. Suffice to say, the astronomical value of nearly 220 million was used, making the difference between age-0 and age-1 five orders of magnitude.
+
+Survival Probability
+
+For fish age-3+ and not within the slot limit (from growth curves equivalent to ages 10-15), a constant survival rate 0.94576 was assumed. Applying Chapman peak + 1 to adjust age-frequency (ages 3-19, I believe, or maybe just those subject to harvest), a survival rate of 0.813155874 was estimated. Using algorithms found in Ricker 1975, 0.813155874 amounts to ~0.0558 natural mortaily (M). With no fishing mortality and M = 0.0558 we arrive at 0.94576 survival rate.
+
+Natural mortality (M), though not a direct input to the model, can noticably affect output. In the current Shiny app, merely lowering harvest rate generates surprisingly unexpected results (*lower* lambda), because now M has increased (assuming survival rate does not change).For now, maintaing M at ~5% is probably a good scenario when adjusting surivival rate & harvest rate. The assumption that it's constant for non-harvestable fish should be tested at some point. 
+
+Ages 0-2 survival rates were obtained from the literatue (see Master's thesis for references; `0` = 0.002, `1` = 0.25, `2` = 0.840). Applying 0.002 to ~220 million age-0, we arrive at ~ 440K age-1. Carrying this through to age-20, we arrive at about 14K White Sturgeon. Though these numbers seem plausible, I think sturgeon folks would be dancing in the streets if there were in fact 440K age-1 fish and upwards of 14K age-20 fish. This includes fishing mortality for ages 10-15.
+
+Spawning Probability
+
+Assumes spawning does not occur until age-10. Probability was estimated (predicted) using logisitic regression (R's glm() function) on Chapman et al. 1996 summarized data. When I do this, I get warning "In eval(family$initialize) : # non-integer #successes in a binomial glm!". No further investigation taken.
+
+Egg Count
+
+Ages 0-9 set to 0. Ages-10+ predicted using linear regression on length given number of eggs from Devore 19??. Oddly, Devore's data follow 0.072 * len^2.94, which is not linear. In earlier investigations, I found disrepancies in predicted standard errors (find 'FecundityDiffSE.xlsx'). No further investigation as to why.

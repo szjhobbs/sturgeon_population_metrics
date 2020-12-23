@@ -1,0 +1,289 @@
+---
+
+---
+
+<!-- See annual summary data saved as `card_summary.csv` within this directory (`fishery`).  -->
+
+<!-- TODO: MORE NARRATIVE HERE for table summary
+(1) explain with comments each code chunk
+(2) narrative: wording about pre-ALDS & ALDS, free & then charge
+(3) narrative: note about pre-ALDS not having DNF category
+(4) narrative: number table and then reference number; explain field names
+(5) decide whether or not to include species fate
+(6) decide whether or not to save output to .csv file
+-->
+
+```{r todo-list, eval=FALSE}
+
+# TODO: address below
+# See Notes-FishingCode.txt
+
+# Useage level codes (2013-current)*:
+#    U   = used card (& caught fish)
+#    NU  = did not use card (i.e., did not fish)
+#    UNS = used card (but did not catch fish; i.e., got skunked)
+
+# *in 2012 codes were only U or NU
+
+# TODO: address for 2013 and greater, som anglers entering on-line reported
+# fishing but did not report catch (use proper internet selection for fishing)
+
+# TODO: include 2 columns of catch (one with using codes u, nu, uns) and the
+# other straight from the Catch dataframe
+
+# TODO: consolidate species_fate and annual_length (similar) but some length
+# data in the latter might be nice to preserve
+
+# TODO: add narrative
+
+# TODO: save appropriate data
+
+```
+
+<!-- Cards issued (purchased) -->
+
+```{r purchased}
+
+# Card data are bifurcated (i.e., pre-ALDS, ALDS), so it is a bit cumbersome to
+# combine into concise output issued and returned data
+
+# below is the summary for cards issued or purchased (year dependent)
+
+# head(Card[["ArchTally"]])
+# head(Card[["AldsPurchased"]])
+
+col_names <- c("Year", "Issued")
+      
+p07_11 <- aggregate(
+  formula = Counts ~ CardYear,
+  data = Card[["ArchTally"]],
+  FUN = sum,
+  subset = TallyDesc %in% "CardsIssued"
+)  
+
+colnames(p07_11) <- col_names
+
+pAlds <- aggregate(
+  formula = LicenseID ~ ItemYear,
+  data = Card[["AldsPurchased"]],
+  FUN = length,
+  subset = StatusCodeDesc %in% "Active" &
+    !duplicated(LicenseID)
+)  
+
+colnames(pAlds) <- col_names
+
+purchased <- rbind(p07_11, data.frame(Year = 2011, Issued = 112000), pAlds)
+
+# clean up
+rm(p07_11, pAlds, col_names)
+
+```
+
+<!-- Cards returned -->
+
+```{r ret-0711}
+
+dnf_nocatch_0711 <- aggregate(
+  formula = Counts ~ CardYear + TallyDesc,
+  data = Card[["ArchTally"]],
+  FUN = sum,
+  na.rm = TRUE,
+  subset = !(TallyDesc %in% "CardsIssued")
+)
+
+```
+
+```{r ret-alds}
+
+# head(Card[["AldsReturned"]])
+
+card_catch_2012 <- with(data = Card$AnglerCatch, expr = {
+  # sum(Year %in% 2012 & !duplicated(AnglerID))
+  sum(!duplicated(AnglerID[Year %in% 2012]))
+})
+
+# !duplicated(LicenseID) needed below
+
+nodup <- !duplicated(Card[["AldsReturned"]][["LicenseID"]])
+
+ret_type_alds <- with(data = Card[["AldsReturned"]][nodup, ], expr = {
+  # nodup <- !duplicated(LicenseID)
+  res <- table(ItemYear, Code, useNA = "ifany")
+  tot_used <- sum(res["2012", c("U", "UNS")])
+  res["2012", "UNS"] <- tot_used - card_catch_2012
+  res["2012", "U"] <- card_catch_2012
+  res
+})
+
+# clean up
+rm(nodup, card_catch_2012)
+
+```
+
+```{r ret-catch}
+
+# gets annual number of cards returned with catch; basically it's a count of the
+# unique anglers who reported catching at least one sturgeon
+
+ret_catch <- aggregate(
+  formula = AnglerID ~ Year,
+  data = Card[["AnglerCatch"]],
+  FUN = function(x) sum(!duplicated(x))
+)
+
+colnames(ret_catch) <- c("Year", "Catch")
+
+```
+
+<!-- below adds more fields to annual summary -->
+
+```{r dnf-fnc}
+
+# purchased$NoEffort <- NULL
+# purchased$NoCatch <- NULL
+# purchased$Catch <- NULL
+
+# combine older & ALDS data for did not fish & fished no catch
+dnf_fnc <- with(data = dnf_nocatch_0711, expr = {
+  
+  b_dnf <- TallyDesc %in% "DidNotFish"
+  b_fnc <- TallyDesc %in% "NoCatch"
+  
+  # NU = did not fish; UNS = fished no catch
+  dnf <- c(Counts[b_dnf], unname(ret_type_alds[, "NU"]))
+  fnc <- c(Counts[b_fnc], unname(ret_type_alds[, "UNS"]))
+  
+  # because CDFW did not collect these data 2007-2010
+  dnf[1:3] <- NA_integer_
+  
+  # matrix for ease of combining with purchased data
+  matrix(
+    data = c(dnf, fnc),
+    ncol = 2,
+    dimnames = list(NULL, c("NoEffort", "NoCatch"))
+  )
+})
+
+# clean up
+rm(dnf_nocatch_0711)
+
+```
+
+```{r card-summary}
+
+# to create the card sumary by combining purchased data with reported data
+
+card_summary <- data.frame(
+  # purchased[purchased[["Year"]] <= current_card_year, ],
+  purchased,
+  dnf_fnc
+)
+
+card_summary <- merge(
+  x = card_summary,
+  y = ret_catch,
+  by = "Year",
+  all = TRUE
+)
+
+i <- match(
+  card_summary[["Year"]],
+  table = as.numeric(dimnames(ret_type_alds)[[1]])
+)
+
+card_summary$CatchAlds <- ret_type_alds[i, "U"]
+
+# clean up
+rm(i, purchased, dnf_fnc, ret_type_alds, ret_catch)
+
+```
+
+```{r return-rate}
+
+rate_not_ret <- with(data = card_summary, expr = {
+  
+  eff <- NoEffort
+  eff[is.na(eff)] <- 0
+  
+  yr <- Year <= 2011
+  
+  ctc <- vector(mode = "numeric", length = length(yr))
+  
+  ctc[yr] <- Catch[yr]
+  ctc[!yr] <- CatchAlds[!yr]
+  
+  ret <- eff + NoCatch + ctc
+  
+  list(RR = (ret / Issued) * 100, Not = Issued - ret)
+})
+
+card_summary$ReturnRate <- rate_not_ret[["RR"]]
+card_summary$NotReturned <- rate_not_ret[["Not"]]
+
+```
+
+```{r reporting-source}
+
+reporting_source <- aggregate(
+  formula = CustomerID ~ ItemYear + CustomerSourceCode,
+  data = Card[["AldsReturned"]],
+  FUN = length
+)
+
+colnames(reporting_source) <- c("Year", "Source", "Count")
+
+# add reporting source fields to card_summary
+
+b_cc <- reporting_source[["Source"]] %in% "CC"
+
+i <- match(card_summary[["Year"]], table = reporting_source[["Year"]])
+
+card_summary$CC <- reporting_source[b_cc, "Count"][i]
+card_summary$IS <- reporting_source[!b_cc, "Count"][i]
+
+# clean up
+rm(reporting_source, b_cc, i)
+
+```
+
+<!-- may not include below in display -->
+
+```{r species-fate, eval=FALSE}
+
+# chunk merges card_summary with species fate, and for now (09-Apr-2020) I've
+# decided not to include this, likely it'll be presented elsewhere in the report
+
+species_fate <- aggregate(
+  formula = AnglerID ~ Year + Species + Fate,
+  data = Card[["AnglerCatch"]],
+  FUN = length
+)
+
+# for ease of display
+species_fate <- xtabs(
+  formula = AnglerID ~ Year + paste(Species, Fate, sep = "_"),
+  data = species_fate
+)
+
+# for mering with card_summary
+species_fate <- data.frame(
+  Year = as.numeric(dimnames(species_fate)[[1]]),
+  GST = species_fate[, "Green_"],
+  WSTr = species_fate[, "White_released"],
+  WSTk = species_fate[, "White_kept"],
+  Unkr = species_fate[, "Unk_released"],
+  row.names = NULL
+)
+
+card_summary <- merge(
+  x = card_summary,
+  y = species_fate,
+  by = "Year",
+  all = TRUE
+)
+
+# clean up
+rm(species_fate)
+
+```

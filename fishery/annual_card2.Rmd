@@ -1,0 +1,559 @@
+---
+
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_knit$set(
+  root.dir = "~/RProjects/SturgeonPopMetrics/",
+  global.par = TRUE
+)
+
+knitr::opts_chunk$set(echo = FALSE)
+
+```
+
+## Introduction
+
+Herein we provide additional sturgeon report card summaries. (See `annual_card.*` for historical summaries.) We summarize annually the number of anglers keeping 1, 2, or 3 White Sturgeon. For exploratory purposes, we observe annual White Sturgeon harvest given two scenarios restricting (i.e., making smaller) the current slot limit. Finally, to the extent possible we make some characterizations of the sturgeon angling population.
+
+```{r data-log-date}
+
+data_log <- readLines("data/card/data-log")[1]
+ptrn <- "\\d{4}\\-\\d{2}\\-\\d{2}\\s{1}\\d{2}\\:\\d{2}\\:\\d{2}"
+
+dte <- gregexpr(pattern = ptrn, text = data_log)
+
+srt <- dte[[1]][1]
+stp <- attr(dte[[1]], which = "match.length")
+
+dte <- substr(data_log, start = srt, stop = srt + (stp - 1))
+
+# clean up
+rm(srt, stp, data_log, ptrn)
+
+```
+
+**NOTE**: Card data are not static, and summaries may change as new data become available. The current summary year (typically one year behind current calendar year) is most affected by this. Most recent data extraction: `r dte`.
+
+**NOTE**: Herein, for readability we display a very limited amount of computer code. For such code, please see the `.Rmd` file with the same name.
+
+## Libraries
+
+We load the `sportfish` package, currently available on GitHub. For now (26-Jun-2019), this is the only package required.
+
+```{r load-libraries, echo=TRUE}
+
+library(sportfish)
+# library(package)
+
+```
+
+```{r global-par} 
+
+source(file = "presentations/.base-par.R")
+par(mar = c(5, 6.5, 1, 1))
+
+```
+
+## Load Data
+
+We load all `.rds` files from directory `data/card`. To keep our workspace clean, we load these files into a new environment called `Card`.
+
+```{r load-data, echo=TRUE}
+
+# the data directory for bay study
+data_dir <- "data/card"
+
+# list.files(path = data_dir, pattern = ".rds")
+
+Card <- new.env()
+ReadRDSFiles(fileDir = data_dir, envir = Card)
+
+# clean up
+rm(data_dir)
+
+```
+
+Here we create some variables we'll use throughout this process. We create them here and now for convenience.
+
+*Note*: none needed at this time.
+
+```{r variables}
+
+# none at this time
+
+```
+
+## Summaries
+
+In this section, we provide tables and some graphics for summary purposes. Please see sections below for specifics about harvest, slot limit scenarios, or angler behavior.
+
+#### Harvest
+
+```{r angler-count-kept}
+
+# head(Card[["AnglerCatch"]])
+
+angler_count_kept <- aggregate(
+  formula = AnglerID ~ Year,
+  data = Card[["AnglerCatch"]],
+  FUN = function(x) {
+    # res <- table(table(x))
+    # c(table(res), prop.table(table(res)))
+    # c(res, prop.table(res))
+    table(table(x))
+  },
+  subset = Species %in% "White" & Fate %in% "kept"
+)
+
+# for convenience of dataframe
+angler_count_kept <- data.frame(
+  Year = angler_count_kept[["Year"]],
+  Kept = angler_count_kept[["AnglerID"]],
+  Fraction = prop.table(angler_count_kept[["AnglerID"]], margin = 1)
+)
+
+# for neatness in display
+colnames(angler_count_kept) <- sub(
+  pattern = "\\.",
+  replacement = "",
+  colnames(angler_count_kept)
+)
+
+```
+
+Currently, anglers may keep up to three White Sturgeon each year. Below we display annual counts and fractions of anglers keeping 1, 2, or 3 fish. Roughly 6-7% of anglers who catch and keep White Sturgeon retain the limit (3). About 75% of that demographic keep only 1 fish annually.
+
+```{r disp-angler-count-kept}
+
+knitr::kable(angler_count_kept, format = "pandoc", digits = 2)
+
+```
+
+#### Slot Limit (harvest at length)
+
+Current regulations allow anglers to keep annually up to 3 White Sturgeon between 40 and 60 inches fork length (FL). Here we explore the "savings" (in counts of White Sturgeon) given two scenarios restricting (i.e., making smaller) our current slot size: (1) 43-57 inches FL and (2) 45-55 inches FL. *Please note*: these scenarios are merely for demonstration purposes and do not reflect actual regulation change proposals.
+
+```{r len-freq}
+
+bool_lf <- with(data = Card[["AnglerCatch"]], expr = {
+  Year > 2012 &
+    Fate %in% "kept" &
+    Species %in% "White" &
+    (Length >= 40 & Length <= 60)
+})
+
+lf_wstk <- aggregate(
+  formula = Length ~ Year,
+  data = Card[["AnglerCatch"]],
+  FUN = Frequency,
+  binWidth = 1,
+  subset = bool_lf
+)
+
+lf_wstk <- data.frame(
+  Year = lf_wstk[["Year"]],
+  lf_wstk[["Length"]]
+)
+
+```
+
+Below we display a somewhat unorthodox annual length frequency distribution. We show year (y-axis) by fork length (x-axis). The numbers in the plot represent White Sturgeon count by length in 1-inch increments. For this purpose, we restrict our analysis to include only kept fish and only years 2013 [^1] onward. We shade in light red the two scenarios mentioned above.
+
+[^1]: the year in which regulations changed from total length to fork length. Not including other years reduces ambiguity due to conversion.
+
+```{r wst-count-saved}
+
+# head(Card[["AnglerCatch"]])
+
+par(bty = "o")
+
+plot(
+  # jitter(Year) ~ jitter(Length, factor = 0.5),
+  Year ~ Length,
+  data = Card[["AnglerCatch"]],
+  subset = bool_lf,
+  type = "n",
+  col = rgb(red = 0, green = 0, blue = 0, alpha = 0.1)
+)
+
+# box()
+axis(side = 1, at = 40:60, labels = NA, tck = -0.01)
+
+# par(xaxp = c(40, 60, 25))
+# grid(lwd = 1000, col = "grey90")
+# grid(lty = 1, col = "white", lwd = 1)
+
+rect(
+  xleft = 45 * 0.99,
+  ybottom = 2013 * 0.9999,
+  xright = 55 * 1.01,
+  ytop = 2019 * 1.0001,
+  # col = "grey50",
+  col = rgb(red = 0.3, green = 0, blue = 0, alpha = 0.1),
+  border = NA
+)
+
+rect(
+  xleft = 43 * 0.99,
+  ybottom = 2013 * 0.9999,
+  xright = 57 * 1.01,
+  ytop = 2019 * 1.0001,
+  col = rgb(red = 0.3, green = 0, blue = 0, alpha = 0.1),
+  border = NA
+)
+
+wst_count_saved <- Map(function(x = 40:60, y, lbl) {
+  text(x = x, y = y, labels = lbl, col = 1, cex = 0.75)
+  
+  c(
+    Year = y,
+    Range43_57_l = sum(lbl[x %in% 40:42]),
+    Range43_57_u = sum(lbl[x %in% 58:60]),
+    Range45_55_l = sum(lbl[x %in% 40:44]),
+    Range45_55_u = sum(lbl[x %in% 56:60])
+  )
+  
+}, y = lf_wstk$Year, lbl = lf_wstk$counts)
+
+par(bty = "n")
+
+```
+
+Below we show number of fish **not** harvested given our two scenarios. `_l` denotes sub-legal and `_u` represents over-legal under the restricted slot sizes. Overall (i.e., for the six-year period) numbers are shown below the table. For example, over the 6-year period, if the upper limit would have been set at 55-inches FL, almost 2500 White Sturgeon would not have been harvested.
+
+```{r disp-count-saved}
+
+wst_count_saved <- do.call(what = rbind, args = wst_count_saved)
+knitr::kable(wst_count_saved, format = "pandoc")
+
+```
+
+```{r disp-overall}
+
+knitr::kable(
+  colSums(wst_count_saved[, -1]),
+  format = "pandoc",
+  col.names = "Count"
+)
+
+```
+
+#### Angler Behavior
+
+```{r splt-angler}
+
+# slow (but better than before)
+
+b <- with(data = Card[["AnglerCatch"]], expr = {
+  # b <- !(Species %in% "Green") & AnglerID %in% "H-92919"
+  b <- !(Species %in% "Green")
+})
+
+# sv <- c("Year", "AnglerID", "CaptureDate")
+sv <- "AnglerID"
+
+# split subsetted data for per angler analytics
+splt_angler <- split(
+  Card[["AnglerCatch"]][b,  ],
+  f = Card[["AnglerCatch"]][b,  sv],
+  drop = TRUE
+)
+
+# clean up
+rm(b)
+
+```
+
+```{r angler-date}
+
+angler_date <- lapply(splt_angler, FUN = function(x) {
+  
+  # now split on date
+  sp <- split(x, f = x["CaptureDate"], drop = TRUE)
+  
+  out <- vapply(sp, FUN = function(y) {
+    b <- y[["Fate"]] %in% "kept"
+    l <- y[["FL_cm"]]
+    
+    n <- NA
+    knr <- 0
+    
+    # catch-n-release is FALSE (default)
+    cr <- 0 
+    
+    # catch-n-release is TRUE if all not kept is TRUE
+    if (all(!b)) cr <- 1 
+    
+    if (cr && !all(is.na(l))) n <- sum(l %in% 102:152)
+    
+    if (length(table(b)) > 1) knr <- 1
+    
+    c(
+      Year = unique(y[["Year"]]),
+      CountK = sum(b),
+      CountR = sum(!b),
+      KRSameDay = knr,
+      CROnly = cr,
+      CountH = n
+    )
+    
+  }, FUN.VALUE = numeric(6L))
+  # end vapply loop
+  
+  tms <- dim(out)[2]
+  
+  dte <- rep(as.Date(NA), times = tms)
+  ang <- rep(unique(x[["AnglerID"]]), times = tms)
+  
+  if (!is.null(dimnames(out)[[2]]))
+    dte <- as.Date(dimnames(out)[[2]])
+
+  # lapply output
+  data.frame(
+    AnglerID = ang,
+    CaptureDate = dte,
+    t(out),
+    row.names = NULL,
+    stringsAsFactors = FALSE
+  )
+  
+})
+
+# angler_date <- do.call(what = rbind, args = angler_date)
+
+# clean up
+rm(splt_angler)
+
+```
+
+```{r angler-annual}
+
+# angler_date$`H-92919`
+
+angler_annual <- lapply(angler_date, FUN = function(x) {
+  
+  s <- split(x, f = x[["Year"]], drop = TRUE)
+  
+  out <- vapply(s, FUN = function(d) {
+    
+    dys <- nrow(d)
+    k <- sum(d[["CountK"]])
+    r <- sum(d[["CountR"]])
+    dys_kr_same <- sum(d[["KRSameDay"]])
+    dys_cr_only <- sum(d[["CROnly"]])
+    is_cr_only <- all(d[["CROnly"]] == 1)
+    dys_possible_harvest <- sum(!is.na(d[["CountH"]]))
+    date_range <- range(d[["CaptureDate"]])
+    month_range <- as.numeric(format(date_range, format = "%m"))
+    
+    c(
+      Days = dys,
+      NumKept = k,
+      NumRel = r,
+      DaysKRSame = dys_kr_same,
+      DaysCROnly = dys_cr_only,
+      AnglerIsCROnly = is_cr_only,
+      DysPossibleHarvest = dys_possible_harvest,
+      MonthStart = month_range[1],
+      MonthEnd = month_range[2]
+    )
+  
+  }, FUN.VALUE = numeric(9L))
+  
+  data.frame(
+    Year = as.numeric(dimnames(out)[[2]]),
+    t(out),
+    row.names = NULL
+  )
+  
+})
+
+angler_annual <- do.call(what = rbind, args = angler_annual)
+rownames(angler_annual) <- NULL
+
+```
+
+```{r days-fished}
+
+days_fished <- aggregate(
+  formula = Days ~ Year,
+  data = angler_annual,
+  FUN = DescStat
+)
+
+# for convenience of plotting & viewing
+days_fished <- data.frame(
+  Year = days_fished[["Year"]],
+  days_fished[["Days"]]
+)
+
+days_fished[] <- lapply(days_fished, FUN = unlist)
+
+```
+
+```{r prop-days-fished, eval=FALSE}
+
+# a possibility
+
+prop_days_fished <- with(data = angler_annual, expr = {
+  prop.table(table(Year, Days, useNA = "ifany"), margin = 1)
+})
+
+plot(prop_days_fished[, 1])
+
+```
+
+Here we plot days fished by each angler who caught (kept or released or both) a White Sturgeon. Days fished include only days for which the angler caught White Sturgeon and does not include 0-catch days (i.e., for White Sturgeon).
+
+Each point represents an angler, and darker areas indicate more anglers. Most anglers fish and catch fewer than 6 days per year. In fact, the average (orange X in plot) is roughly 2 days per year. A select few anglers catch White Sturgeon > 20 days per year. (*Note*: noise added to x-axis to mitigate over-plotting.)
+
+```{r plot-days-fished}
+
+# empty plot for annual days fished by each angler
+plot(
+  formula = Days ~ Year,
+  data = angler_annual,
+  type = "n",
+  xlab = "Year",
+  ylab = "Days fished"
+)
+
+par(xaxp = c(2007, 2019, 12))
+grid(lwd = 1000, col = "grey90")
+grid(lty = 1, col = "white", lwd = 1)
+
+# data points (each is an indvidual angler)
+points(
+  formula = Days ~ jitter(Year),
+  data = angler_annual,
+  col = rgb(red = 0, green = 0, blue = 0, alpha = 0.1),
+  pch = 20
+)
+
+# to add mean days fished per angler per year
+points(
+  formula = Avg ~ Year,
+  data = days_fished,
+  pch = 4,
+  col = "orange2",
+  lwd = 3
+)
+
+rng_avg_days <- range(days_fished[["Avg"]])
+
+mtext(
+  # text = bquote(Median[overall] == .(round(median(mn), digits = 2))),
+  text = sprintf(
+    "Range average days fished & caught: %.2f to %.2f",
+    rng_avg_days[1], rng_avg_days[2]
+  ),
+  adj = 0,
+  col = "grey25"
+)
+
+```
+
+Anglers may keep up to one White Sturgeon per day, three per year. In a given day, any angler keeping a White Sturgeon must stop fishing for that day.
+
+Here we explore anglers who catch-n-release and catch-n-keep White Sturgeon on the same day. Given anglers may keep up to three White Sturgeon per year, we further explore how many anglers do this not just once per year, but twice or three times in a given year.
+
+Overwhelmingly, many anglers do not catch-n-release and catch-n-keep White Sturgeon in the same day (see range in field `Prop0` below). Only about 10% of anglers catch-n-release and catch-n-keep White Sturgeon on 1 day, and very few do this 3 days per year. Whole numbers indicate number of anglers, decimals fractions of total. Range based on annual numbers from `r min(angler_annual[["Year"]])` to `r max(angler_annual[["Year"]])`.
+
+```{r kr-same-day}
+
+# angler count: kept & released in same day
+freq_kr_same <- aggregate(
+  DaysKRSame ~ Year,
+  data = angler_annual,
+  FUN = table
+)
+
+# for convenience of viewing & plotting (as desired)
+freq_kr_same <- data.frame(
+  Year = freq_kr_same[["Year"]],
+  Day = freq_kr_same[["DaysKRSame"]],
+  Prop = prop.table(freq_kr_same[, 2], margin = 1)
+)
+
+# for neatness in display
+colnames(freq_kr_same) <- sub(
+  pattern = "\\.",
+  replacement = "",
+  colnames(freq_kr_same)
+)
+
+```
+
+```{r disp-kr-same-range}
+
+res <- vapply(freq_kr_same[, -1], FUN = range, FUN.VALUE = numeric(2L))
+dimnames(res)[[1]] <- c("Min", "Max")
+
+knitr::kable(res, format = "pandoc", digits = 4)
+
+# clean up
+rm(res)
+
+```
+
+```{r cr-only}
+
+# angler count: catch & release only
+cr_only <- aggregate(
+  AnglerIsCROnly ~ Year,
+  data = angler_annual,
+  FUN = table
+)
+
+# for convenience of viewing & plotting (as desired)
+cr_only <- data.frame(
+  Year = cr_only[["Year"]],
+  Day = cr_only[["AnglerIsCROnly"]],
+  Prop = prop.table(cr_only[, 2], margin = 1)
+)
+
+```
+
+Given the data we collect (or do not collect), it is challenging to describe accurately the catch-n-release element of the White Sturgeon fishery. Here we display annually the fraction of anglers deemed catch-n-release. We do not know for certain if these anglers just simply did not catch a legal-sized fish --- though some anglers do provide lengths of released fish --- or if these anglers were actively catch-n-release types (i.e., they released all White Sturgeon irrespective of size). Please keep this in mind when interpreting the plot below.
+
+```{r plot-cr-only}
+
+# empty plot for annual days fished by each angler
+plot(
+  formula = Prop.1 ~ Year,
+  data = cr_only,
+  type = "n",
+  xlab = "Year",
+  ylab = "Fraction of anglers"
+)
+
+par(xaxp = c(2007, 2019, 12))
+grid(lwd = 1000, col = "grey90")
+grid(lty = 1, col = "white", lwd = 1)
+
+# data points
+points(
+  formula = Prop.1 ~ Year,
+  data = cr_only,
+  col = "grey40",
+  lwd = 0.5,
+  lty = 2,
+  type = "c"
+)
+
+points(
+  formula = Prop.1 ~ Year,
+  data = cr_only,
+  col = "orange4",
+  pch = 19,
+  cex = 1.25
+)
+
+```
+
+---
+
+CDFW, SportFish Unit    
+`r Sys.Date()`

@@ -1,0 +1,69 @@
+---
+
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_knit$set(root.dir = "~/RProjects/SturgeonPopMetrics")
+knitr::opts_chunk$set(echo = FALSE)
+
+```
+
+```{r libraries}
+
+# library()
+
+```
+
+```{r load-data}
+
+indices <- read.csv(file = "abundance/AllIndices.csv")
+
+
+```
+
+```{r somevars}
+
+
+
+
+```
+
+Young of year index from Bay Study data.
+
+For metadata and calculations see [Fish 2010](https://nrm.dfg.ca.gov/FileHandler.ashx?DocumentId=26542)
+
+```{r}
+
+par(mar = c(3.0, 4, 1, 1) + 0.1, bty = "u")
+
+plot(
+  formula = WSTBS ~ Year,
+  data = indices,
+  type = "b",
+  las = 1,
+  ylab = "Index",
+  xaxt = "n",
+  xlab = NA
+)
+
+axis(
+  side = 1,
+  at = (1980:2016)[(1980:2016) %% 5 == 0],
+  labels = (1980:2016)[(1980:2016) %% 5 == 0],
+  tck = -0.03,
+  padj = -0.5
+)
+
+axis(
+  side = 1,
+  at = 1980:2016,
+  labels = NA,
+  tck = -0.01
+)
+
+mtext(text = "Year", side = 1, line = 1.5)
+
+
+```
+

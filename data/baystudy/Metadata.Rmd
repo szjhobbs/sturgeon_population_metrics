@@ -1,0 +1,35 @@
+---
+
+
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_knit$set(root.dir = "~/RProjects/SturgeonPopMetrics/data")
+
+knitr::opts_chunk$set(echo = FALSE)
+
+```
+
+```{r load-libraries}
+
+library(sportfish)
+# library(package)
+
+```
+
+```{r load-data}
+
+ReadRDSFiles(fileDir = "baystudy")
+
+```
+
+```{r record-count}
+
+rc <- vapply(ls(), FUN = function(x) nrow(get(x)), FUN.VALUE = numeric(1L))
+
+knitr::kable(as.data.frame(rc), col.names = "Records")
+
+```
+
+

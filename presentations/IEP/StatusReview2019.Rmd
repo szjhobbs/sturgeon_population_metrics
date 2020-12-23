@@ -1,0 +1,1195 @@
+---
+title: |
+  | Year-class Indices & Other Population Metrics
+  | Sturgeon Status and Review:
+author: "Andrew Danos, Jason DuBois, Randy Baxter"
+date: "March 7, 2019"
+output:
+  slidy_presentation:
+    duration: 15
+    footer: CDFW 2019
+    keep_md: no
+  ioslides_presentation: default
+  powerpoint_presentation: default
+  beamer_presentation: default
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_knit$set(
+  root.dir = "~/RProjects/SturgeonPopMetrics/",
+  global.par = TRUE
+)
+
+```
+
+```{r load-data, include=FALSE}
+
+# YCI (bay study & salvage)
+yci_bs <- read.csv(file = "indices/yci_bs.csv")
+yci_salvage <- read.csv(file = "indices/yci_salvage.csv")
+
+# Card (summary, length summary, & angler catch raw data)
+card_summary <- read.csv(file = "fishery/card_summary.csv")
+card_summary <- subset(card_summary, subset = Year < 2019)
+
+card_sp_length <- read.csv(
+  file = "fishery/card_sp_length.csv",
+  stringsAsFactors = FALSE
+)
+card_sp_length <- subset(card_sp_length, subset = Year < 2019)
+
+AnglerCatch <- readRDS("data/card/AnglerCatch.rds")
+
+# CPFV CPUE
+
+SFESuccessful <- readRDS("data/cpfv/SFESuccessful.rds")
+
+# Mark-Recapture (all sturgeon, annual cpue summary)
+Sturgeon <- readRDS("data/tagging/Sturgeon.rds")
+Sturgeon <- subset(Sturgeon, subset = RelYear > 1967)
+
+CpueWST <- read.csv(file = "abundance/cpue_wst.csv")
+tagging_years <- CpueWST[["year"]] # for dataset plot
+CpueWST <- subset(CpueWST, subset = year > 1967)
+
+WSTHarvest <- readRDS("data/tagging/WSTHarvest.rds")
+WSTHarvest <- subset(WSTHarvest, subset = RelYear > 1997)
+
+# Blackburn model sims
+lambda_mu <- read.csv(file = "presentations/IEP/BlackburnModelSims.csv")
+
+```
+
+```{r source-files, include=FALSE}
+
+source(file = "presentations/.base-par.R")
+
+```
+
+```{r libraries, include=FALSE}
+
+library(sportfish)
+
+```
+
+# Datasets
+
+```{r data-sets}
+
+# (1) baystudy    1980-present
+# (2) cpfv        log books 1936-1940, 1947-present
+# (3) reportcard  2007-present
+# (4) salvage     1957-present (CVP),; 1968-present (SWP)
+# (5) tagging     intermittently since 1954
+# (6) nativefish  ??
+
+years_ds <- 1936:2018
+evens <- years_ds %% 2 == 0
+
+# set up plot
+plot(
+  x = range(years_ds),
+  y = c(1, 5),
+  type = "n",
+  xaxt = "n",
+  yaxt = "n",
+  # xlab = "Year",
+  xlab = NA,
+  # ylab = "Dataset"
+  ylab = NA
+)
+
+axis(side = 1, at = years_ds[evens], labels = years_ds[evens], tck = -0.02)
+axis(side = 1, at = years_ds, labels = NA, tck = -0.01)
+axis(
+  side = 2,
+  at = 5:1,
+  labels = c("BayS", "CPFV", "Card", "Slvg", "MrkR"),
+  las = 1
+)
+
+# for ease of changing points and point size
+pt <- "|"
+ps <- 2
+coln <- "orange3"    # color for data not used (n)
+colu <- "royalblue3" # color for data used (u)
+
+# bay study
+points(1980:2018, rep(5, times = 39), pch = pt, cex = ps, col = colu)
+# cpfv
+points(1980:2018, rep(4, times = 39), pch = pt, cex = ps, col = colu)
+points(1947:1979, rep(4, times = 33), pch = pt, cex = ps, col = coln)
+points(1936:1940, rep(4, times = 5), pch = pt, cex = ps, col = coln)
+# card
+points(2007:2018, rep(3, times = 12), pch = pt, cex = ps, col = colu)
+# salvage
+points(1957:1979, rep(2, times = 23), pch = pt, cex = ps, col = coln)
+points(1980:2018, rep(2, times = 39), pch = pt, cex = ps, col = colu)
+# tagging
+points(tagging_years[1:3], rep(1, times = 3), pch = pt, cex = ps, col = coln)
+points(
+  tagging_years[4:length(tagging_years)],
+  rep(1, times = length(tagging_years) - 3),
+  pch = pt,
+  cex = ps,
+  col = colu
+)
+
+# red point for year of no tagging (2018)
+points(2018, 1, pch = pt, cex = ps, col = 2)
+
+# clean up
+rm(evens, years_ds)
+
+```
+
+# Bay Study YCI - White Sturgeon
+
+```{r plot-bs_wyci}
+
+years_bs <- yci_bs[["Year"]]
+evens <- years_bs %% 2 == 0
+div <- 100
+range_wyci <- range(yci_bs[["WYCI"]], na.rm = TRUE)
+
+# plot(WYCI ~ Year, data = yci_bs, type = "h", lend = 2)
+# plot(WYCI ~ Year, data = yci_bs, type = "b")
+
+plot(
+  x = range(years_bs),
+  y = range_wyci,
+  type = "n",
+  xaxt = "n",
+  yaxt = "n",
+  # xlab = "Year",
+  xlab = "",
+  ylab = sprintf("Year-class index (x %s)", div)
+)
+yvals <- axTicks(side = 2)
+
+lines(x = years_bs, y = yci_bs[["WYCI"]], lty = 2, lwd = 0.4, col = "grey40")
+# points(
+#   x = years_bs,
+#   y = yci_bs[["WYCI"]],
+#   cex = 1.5,
+#   pch = 21,
+#   col = "white",
+#   bg = "white"
+# )
+points(
+  x = years_bs,
+  y = yci_bs[["WYCI"]],
+  cex = 2,
+  pch = 21,
+  col = "white",
+  bg = "royalblue3"
+)
+axis(side = 1, at = years_bs[evens], labels = years_bs[evens], tck = -0.02)
+axis(side = 1, at = years_bs, labels = NA, tck = -0.01)
+axis(side = 2, at = yvals, labels = yvals / div, las = 1)
+mtext(
+  text = "Reference: Fish 2010",
+  side = 3,
+  line = 0.25,
+  adj = 0,
+  col = "grey40"
+)
+
+```
+
+# Bay Study YCI - Green Sturgeon
+
+```{r plot-bs_gyci}
+
+range_gyci <- range(yci_bs[["GYCI"]], na.rm = TRUE)
+div <- 10
+
+plot(
+  x = range(years_bs),
+  y = range_gyci,
+  type = "n",
+  xaxt = "n",
+  yaxt = "n",
+  # xlab = "Year",
+  xlab = "",
+  ylab = sprintf("Year-class index (x %s)", div)
+)
+yvals <- axTicks(side = 2)
+
+lines(x = years_bs, y = yci_bs[["GYCI"]], lty = 2, lwd = 0.4, col = "grey40")
+# points(
+#   x = years_bs,
+#   y = yci_bs[["GYCI"]],
+#   cex = 1.5,
+#   pch = 21,
+#   col = "white",
+#   bg = "white"
+# )
+points(
+  x = years_bs,
+  y = yci_bs[["GYCI"]],
+  cex = 2,
+  pch = 21,
+  col = "white",
+  bg = "royalblue3"
+)
+axis(side = 1, at = years_bs[evens], labels = years_bs[evens], tck = -0.02)
+axis(side = 1, at = years_bs, labels = NA, tck = -0.01)
+axis(side = 2, at = yvals, labels = yvals / div, las = 1)
+mtext(
+  text = "Reference: Heublein et al. (in press)",
+  side = 3,
+  line = 0.25,
+  adj = 0,
+  col = "grey40"
+)
+
+# yci_bs[["GYCI"]]
+
+```
+
+# Salvage YCI - White Sturgeon
+
+```{r plot-salwyci}
+
+sal_yr <- range(yci_salvage[["Year"]])
+sal_wyci <- range(yci_salvage[["WYCI"]])
+
+sal_yr_labels <- seq(from = sal_yr[1], to = sal_yr[2], by = 2)
+
+ly <- layout(
+  mat = matrix(data = c(1, 2), nrow = 2, ncol = 1, byrow = TRUE),
+  heights = c(5, 6)
+)
+
+# layout.show(ly)
+
+op <- par(mar = c(0.15, 4.5, 1, 1), las = 1)
+plot(
+  x = sal_yr,
+  y = sal_wyci,
+  type = "n",
+  xaxt = "n",
+  xlab = NA,
+  ylab = "YCI-SWP"
+)
+
+mtext(
+  text = "Reference: Heublein et al. (in press)",
+  side = 3,
+  line = 0,
+  adj = 0,
+  col = "grey40"
+)
+
+lines(
+  formula = WYCI ~ Year,
+  data = yci_salvage,
+  subset = Facility == 1,
+  cex = 1.5,
+  lwd = 0.75,
+  col = "grey40",
+  lty = 2
+)
+points(
+  formula = WYCI ~ Year,
+  data = yci_salvage,
+  subset = Facility == 1,
+  cex = 1.5,
+  pch = 21,
+  col = "white",
+  bg = "royalblue3"
+)
+
+par(op)
+op <- par(mar = c(4, 4.5, 0.15, 1), las = 1)
+
+plot(
+  x = sal_yr,
+  y = sal_wyci,
+  type = "n",
+  xaxt = "n",
+  xlab = NA,
+  ylab = "YCI-CVP"
+)
+lines(
+  formula = WYCI ~ Year,
+  data = yci_salvage,
+  subset = Facility == 2,
+  cex = 1.5,
+  lwd = 0.75,
+  col = "grey40",
+  lty = 2
+)
+points(
+  formula = WYCI ~ Year,
+  data = yci_salvage,
+  subset = Facility == 2,
+  cex = 1.5,
+  pch = 21,
+  col = "white",
+  bg = "royalblue3"
+)
+
+axis(side = 1, at = sal_yr_labels, labels = sal_yr_labels, tck = -0.02)
+axis(side = 1, at = sal_yr[1]:sal_yr[2], labels = NA, tck = -0.01)
+par(op)
+
+```
+
+# Salvage YCI - Green Sturgeon
+
+```{r plot-salgyci}
+
+sal_gyci <- range(yci_salvage[["GYCI"]])
+
+ly <- layout(
+  mat = matrix(data = c(1, 2), nrow = 2, ncol = 1, byrow = TRUE),
+  heights = c(5, 6)
+)
+
+op <- par(mar = c(0.15, 4.5, 1, 1), las = 1)
+plot(
+  x = sal_yr,
+  y = sal_gyci,
+  type = "n",
+  xaxt = "n",
+  xlab = NA,
+  ylab = "YCI-SWP"
+)
+
+mtext(
+  text = "Reference: Heublein et al. (in press)",
+  side = 3,
+  line = 0,
+  adj = 0,
+  col = "grey40"
+)
+
+lines(
+  formula = GYCI ~ Year,
+  data = yci_salvage,
+  subset = Facility == 1,
+  cex = 1.5,
+  lwd = 0.75,
+  col = "grey40",
+  lty = 2
+)
+points(
+  formula = GYCI ~ Year,
+  data = yci_salvage,
+  subset = Facility == 1,
+  cex = 1.5,
+  pch = 21,
+  col = "white",
+  bg = "royalblue3"
+)
+
+par(op)
+op <- par(mar = c(4, 4.5, 0.15, 1), las = 1)
+
+plot(
+  x = sal_yr,
+  y = sal_gyci,
+  type = "n",
+  xaxt = "n",
+  xlab = NA,
+  ylab = "YCI-CVP"
+)
+lines(
+  formula = GYCI ~ Year,
+  data = yci_salvage,
+  subset = Facility == 2,
+  cex = 1.5,
+  lwd = 0.75,
+  col = "grey40",
+  lty = 2
+)
+points(
+  formula = GYCI ~ Year,
+  data = yci_salvage,
+  subset = Facility == 2,
+  cex = 1.5,
+  pch = 21,
+  col = "white",
+  bg = "royalblue3"
+)
+
+axis(side = 1, at = sal_yr_labels, labels = sal_yr_labels, tck = -0.02)
+axis(side = 1, at = sal_yr[1]:sal_yr[2], labels = NA, tck = -0.01)
+par(op)
+
+```
+
+# YCI Correlation (White Sturgeon)
+
+```{r yci-corr}
+
+layout(1)
+
+years <- 1980:2016
+
+b_bst <- yci_bs[["Year"]] %in% years
+b_sal <- yci_salvage[["Year"]] %in% years
+b_swp <- yci_salvage[["Facility"]] %in% 1
+
+mat <- matrix(
+  data = c(
+    yci_bs[b_bst, "WYCI"],
+    yci_salvage[b_sal & b_swp, "WYCI"],
+    yci_salvage[b_sal & !b_swp, "WYCI"],
+    yci_bs[b_bst, "GYCI"],
+    yci_salvage[b_sal & b_swp, "GYCI"],
+    yci_salvage[b_sal & !b_swp, "GYCI"]
+  ),
+  nrow = length(years),
+  dimnames = list(
+    NULL,
+    c("WBST", "WSWP", "WCVP", "GBST", "GSWP", "GCVP")
+  )
+)
+
+# cor_res <- Hmisc::rcorr(mat)
+# cor_res[["r"]]
+
+```
+
+```{r wst-cor}
+
+pairs(
+  mat[, 1:3],
+  upper.panel = PanelCorr(out = "text"),
+  lower.panel = PanelCorr()
+)
+mtext(
+  text = "Reference: Heublein et al. (in press)",
+  side = 3,
+  line = 0,
+  adj = 0,
+  col = "grey40"
+)
+
+```
+
+# YCI Correlation (Green Sturgeon)
+
+```{r gst-cor}
+
+pairs(
+  mat[, 4:6],
+  upper.panel = PanelCorr(out = "text"),
+  lower.panel = PanelCorr()
+)
+mtext(
+  text = "Reference: Heublein et al. (in press)",
+  side = 3,
+  line = 0,
+  adj = 0,
+  col = "grey40"
+)
+
+```
+
+# Report Card - White Sturgeon
+
+```{r plot-kept_rel}
+
+div <- 1000
+range_yr <- range(card_summary[["Year"]])
+years <- card_summary[["Year"]]
+
+ymax <- max(card_summary[, c("WSTr", "WSTk")], na.rm = TRUE) * 1.05
+
+# set up empty plot
+plot(
+  x = range_yr,
+  y = c(0, ymax),
+  type = "n",
+  # xlab = "Year",
+  xlab = NA,
+  ylab = sprintf("Number reported (x %s)", div),
+  xaxt = "n",
+  yaxt = "n",
+  las = 1
+)
+
+# get default tick labels for customization
+# xtk <- axTicks(side = 1)
+xtk <- seq(from = range_yr[1], to = range_yr[2], by = 2)
+ytk <- axTicks(side = 2)
+
+# custom x axis
+axis(
+  side = 1,
+  at = xtk[xtk %% 2 == 1],
+  labels = xtk[xtk %% 2 == 1],
+  tck = -0.02#,
+  # padj = -0.5
+)
+
+axis(side = 1, at = years, labels = NA, tck = -0.01)
+
+# custom y axix
+axis(side = 2, at = ytk, labels = ytk / 1000, las = 1)
+
+# plot released WST
+points(
+  x = card_summary[["Year"]] - 0.08,
+  y = card_summary[["WSTr"]],
+  type = "h", lwd = 20, lend = 2,
+  # col = "#00688B"
+  col = "#4876FF"
+)
+
+# plot kept WST
+points(
+  x = card_summary[["Year"]] + 0.08,
+  y = card_summary[["WSTk"]],
+  type = "h", lwd = 20, lend = 2,
+  # col = "#CD6600"
+  col = "#4D4D4D"
+)
+
+mtext(
+  text = "Source: Fishing Report Cards",
+  side = 3,
+  line = 0,
+  adj = 0,
+  col = "grey40"
+)
+
+```
+
+# Report Card - White Sturgeon (released) 
+
+```{r plot-rel_length}
+
+bool_wstr <- with(data = AnglerCatch, expr = {
+  Species %in% "White" & Fate %in% "released"
+})
+
+range_fl <- range(AnglerCatch[bool_wstr, "FL_cm"], na.rm = TRUE)
+
+year_tick <- seq(from = range_yr[1], to = range_yr[2], by = 2)
+
+plot(
+  x = range_yr,
+  y = range_fl,
+  type = "n",
+  xaxt = "n",
+  yaxt = "n",
+  # xlab = "Year",
+  xlab = NA,
+  ylab = "Fork length (cm)",
+  las = 1
+)
+
+ytk <- axTicks(side = 2)
+
+pt_col <- adjustcolor(
+  col = gray(seq(from = 0,to = 0.5, length.out = 25)),
+  alpha.f = 0.25
+)
+
+points(
+  FL_cm ~ jitter(Year, factor = 1),
+  data = AnglerCatch,
+  pch = 1,
+  cex = 1,
+  subset = bool_wstr,
+  col = pt_col
+)
+
+# stat data
+bool_fate <- card_sp_length[["fate"]] %in% "released"
+
+# se <- sqrt(wst_fl$FL[,"Var"] / wst_fl$FL[,"N"])
+stdev <- sqrt(card_sp_length[bool_fate, "FL_cm.Var"])
+lwr <- card_sp_length[bool_fate, "FL_cm.Avg"] - stdev
+upr <- card_sp_length[bool_fate, "FL_cm.Avg"] + stdev
+yr <- card_sp_length[bool_fate, "Year"]
+
+segments(x0 = yr, y0 = lwr, y1 = upr, lwd = 2, col = "#CD3700")
+
+points(
+  FL_cm.Avg ~ Year,
+  data = card_sp_length,
+  pch = 19,
+  cex = 2,
+  subset = fate %in% "released",
+  col = "#CD3700"
+)
+
+axis(side = 1, at = year_tick, labels = year_tick, tck = -0.02)
+axis(side = 1, at = range_yr[1]:range_yr[2], labels = NA, tck = -0.01)
+axis(side = 2, at = ytk, labels = ytk, tck = -0.01, hadj = 0.75, las = 1)
+
+mtext(
+  text = "Source: Fishing Report Cards",
+  side = 3,
+  line = 0,
+  adj = 0,
+  col = "grey40"
+)
+
+# points(
+#   FL_cm.Med ~ Year,
+#   data = card_sp_length,
+#   pch = 0,
+#   cex = 2,
+#   subset = fate %in% "released",
+#   col = "blue"
+# )
+
+
+```
+
+# CPFV CPUE
+
+```{r}
+
+cpfv_year <- range(SFESuccessful[["Year"]])
+cpfv_cpue <- range(SFESuccessful[["CPUE"]])
+
+
+plot(
+  x = cpfv_year,
+  y = cpfv_cpue,
+  type = "n",
+  xaxt = "n",
+  # yaxt = "n",
+  # xlab = "Year",
+  xlab = NA,
+  ylab = "Catch per 100 angler-hour",
+  las = 1
+)
+
+mtext(
+  text = "Source: CPFV fishing logs",
+  side = 3,
+  line = 0,
+  adj = 0,
+  col = "grey40"
+)
+
+lines(
+  CPUE ~ Year,
+  data = SFESuccessful,
+  lwd = 0.75,
+  lty = 2,
+  col = "grey40"
+)
+points(
+  CPUE ~ Year,
+  data = SFESuccessful,
+  pch = 19,
+  cex = 1.5,
+  col = "royalblue3"
+)
+
+axis(
+  side = 1,
+  at = (cpfv_year[1]:cpfv_year[2])[cpfv_year[1]:cpfv_year[2] %% 2 == 0],
+  labels = (cpfv_year[1]:cpfv_year[2])[cpfv_year[1]:cpfv_year[2] %% 2 == 0],
+  tck = -0.02
+)
+axis(side = 1, at = cpfv_year[1]:cpfv_year[2], labels = NA, tck = -0.01)
+
+
+```
+
+
+# Mark-Recapture Length Distribution
+
+```{r box-plot_FL, eval=FALSE}
+
+Sturgeon <- readRDS("data/tagging/Sturgeon.rds")
+
+year <- factor(Sturgeon$RelYear, levels = 1968:2017)
+
+Sturgeon$Year <- factor(Sturgeon$RelYear, levels = 1954:2017)
+
+test <- boxplot(FL ~ year, data = Sturgeon, subset = RelYear > 1967, drop = F)
+
+plot(FL ~ RelYear, data = Sturgeon)
+
+test$names <- as.numeric(test$names)
+test$names <- 1968:2017
+
+bxp(test)
+abline(h = c(102, 152), col = 2)
+
+boxplot(Sturgeon[, c("RelYear", "FL")])
+
+```
+
+```{r mr-len_freq, warning=FALSE}
+
+
+wst_fl <- aggregate(
+  formula = FL ~ RelYear,
+  data = Sturgeon,
+  # FUN = DescStat,
+  FUN = function(x) unlist(DescStat(x)),
+  # subset = Species %in% "White" &
+  #   RelYear > 1967,
+  na.action = na.pass
+)
+
+# se <- sqrt(wst_fl$FL[,"Var"] / wst_fl$FL[,"N"])
+stdev <- sqrt(wst_fl$FL[,"Var"])
+lwr <- wst_fl$FL[, "Avg"] - stdev
+upr <- wst_fl$FL[, "Avg"] + stdev
+yr <- wst_fl[["RelYear"]]
+
+plot(
+  x = range(yr),
+  y = c(min(lwr), max(upr, 155)),
+  type = "n",
+  xaxt = "n",
+  yaxt = "n",
+  # xlab = "Year",
+  xlab = NA,
+  ylab = "Fork length (cm)",
+  las = 1
+)
+
+ytk <- axTicks(side = 2)
+
+mtext(
+  text = "Source: CDFW",
+  side = 3,
+  line = 0,
+  adj = 0,
+  col = "grey40"
+)
+
+rect(
+  xleft = min(yr) - 1,
+  ybottom = 102,
+  xright = max(yr) + 1,
+  ytop = 152 ,
+  col = "grey85",
+  border = NA,
+  xpd = NA
+)
+segments(x0 = yr, y0 = lwr, y1 = upr, col = "#27408B", lwd = 1.5)
+
+points(
+  x = yr,
+  y = wst_fl[["FL"]][, "Avg"],
+  cex = 1.5,
+  col = "white",
+  pch = 21,
+  bg = "#27408B"
+)
+
+axis(
+  side = 1,
+  at = seq(from = 1970, to = 2017, by = 5),
+  labels = seq(from = 1970, to = 2017, by = 5),
+  tck = -0.02
+)
+axis(side = 1, at = 1968:2017, labels = NA, tck = -0.01)
+axis(side = 2, at = ytk, labels = ytk, tck = -0.01, hadj = 0.75, las = 1)
+
+# arrows()
+
+
+```
+
+# Mark-Recapture CPUE
+
+```{r mr-cpue}
+
+bool_yr <- CpueWST[["year"]] > 1967
+
+
+cpue_ci <- with(data = CpueWST[bool_yr, ], expr = {
+  
+  se <- sqrt(v.cpue.slt / n)
+  
+  a <- 0.05 # alpha
+  z <- qnorm(1 - a / 2)
+  
+  ci <- se * z
+  
+  l <- m.cpue.slt - ci
+  u <- m.cpue.slt + ci
+  
+  list(
+    lwr = l,
+    upr = u,
+    se = se,
+    yrng = c(min(l, na.rm = TRUE), max(u, na.rm = TRUE))
+  )
+})
+
+# yr <- wst_fl[["RelYear"]]
+plot(
+  x = range(CpueWST[["year"]]),
+  y = cpue_ci[["yrng"]],
+  type = "n",
+  xaxt = "n",
+  # xlab = "Year",
+  xlab = NA,
+  ylab = "Catch per 100 net-fathom hour",
+  las = 1
+)
+
+mtext(
+  text = "Source: CDFW",
+  side = 3,
+  line = 0,
+  adj = 0,
+  col = "grey40"
+)
+segments(
+  x0 = CpueWST[bool_yr, "year"],
+  y0 = cpue_ci[["lwr"]],
+  y1 = cpue_ci[["upr"]],
+  lwd = 5,
+  col = "#27408B",
+  lend = 2
+)
+
+axis(
+  side = 1,
+  at = seq(from = 1970, to = 2017, by = 5),
+  labels = seq(from = 1970, to = 2017, by = 5),
+  tck = -0.02
+)
+axis(side = 1, at = 1968:2017, labels = NA, tck = -0.01)
+# points(
+#   formula = m.cpue.slt ~ year,
+#   data = CpueWST,
+#   pch = 1,
+#   cex = 0.5,
+#   col = "royalblue3"
+# )
+# grid(nx = 10)
+
+```
+
+# Tag Returns (White Sturgeon)
+
+```{r wst-harvest}
+
+# for calculating return rate (# returned / # released)
+harvest <- aggregate(
+  formula = RetYear ~ RelYear + TagVal,
+  data = WSTHarvest,
+  FUN = function(x) {
+    rl <- length(x)
+    rt <- sum(x %in% 1)
+    rate <- rt / rl
+    c(Rel = rl, Ret = rt, Rate = rate)
+  },
+  na.action = na.pass
+)
+
+# for ease of further analytics
+harvest <- data.frame(
+  harvest[c("RelYear", "TagVal")],
+  harvest[["RetYear"]]
+)
+
+# for plotting mean rate per tag value
+mean_rate_val <- aggregate(
+  formula = Rate ~ TagVal,
+  data = harvest,
+  FUN = mean
+)
+
+```
+
+```{r return-rate}
+
+# 
+plot(
+  formula = Rate ~ jitter(TagVal, factor = 0.5),
+  data = harvest,
+  col = "grey50",
+  cex = 1.5,
+  las = 1,
+  ylab = "Rate",
+  xlab = "Tag value ($)",
+  yaxt = "n"
+)
+
+ytk <- axTicks(side = 2)
+
+points(
+  x = mean_rate_val[["TagVal"]],
+  y = mean_rate_val[["Rate"]],
+  col = "orange3",
+  cex = 1.5,
+  pch = 19
+)
+
+axis(
+  side = 2,
+  at = ytk,
+  labels = format(ytk, digits = 2),
+  hadj = 0.85,
+  las = 1
+)
+
+mtext(
+  text = "Source: CDFW",
+  side = 3,
+  line = 0,
+  adj = 0,
+  col = "grey40"
+)
+
+```
+
+# Annual Return Rate
+
+```{r return-rate2}
+
+lkp_col_val <- c(
+  `20` = "steelblue4",
+  `50` = "tan2",
+  `100` = "orange4",
+  `150` = "red2"
+)
+
+lkp_pch_val <- c(
+  `20` = "TW",
+  `50` = "FF",
+  `100` = "HH",
+  `150` = "HF"
+)
+
+plot(
+  formula = Rate ~ RelYear,
+  data = harvest,
+  pch = NA,
+  las = 1,
+  ylab = "Rate",
+  # xlab = "Year",
+  xlab = NA,
+  xaxt = "n",
+  yaxt = "n"
+)
+
+# xlbls <- axTicks(side = 1)
+xlbls <- range(harvest[["RelYear"]])
+xlbls <- seq(from = xlbls[1], to = xlbls[2], by = 2)
+
+text(
+  formula = Rate ~ RelYear,
+  data = harvest,
+  label = lkp_pch_val[as.character(harvest[["TagVal"]])],
+  col = lkp_col_val[as.character(harvest[["TagVal"]])],
+  cex = 1.0,
+  family = "mono",
+  font = 2
+)
+
+axis(side = 1, at = xlbls, labels = xlbls, tck = -0.02)
+axis(side = 1, at = 1998:2017, labels = NA, tck = -0.01)
+
+axis(
+  side = 2,
+  at = ytk,
+  labels = format(ytk, digits = 2),
+  hadj = 0.85,
+  las = 1
+)
+
+mtext(
+  text = "Source: CDFW",
+  side = 3,
+  line = 0,
+  adj = 0,
+  col = "grey40"
+)
+
+```
+
+# Exploitation
+
+```{r}
+
+harvest_yr <- aggregate(
+  formula = RetYear ~ RelYear,
+  data = WSTHarvest,
+  FUN = function(x) {
+    rl <- length(x)
+    rt <- sum(x %in% 1)
+    rate <- rt / rl
+    c(Rel = rl, Ret = rt, Rate = rate)
+  },
+  subset = !(TagVal  %in% 150),
+  na.action = na.pass
+)
+
+# for ease of further analytics
+harvest_yr <- data.frame(
+  harvest_yr["RelYear"],
+  harvest_yr[["RetYear"]]
+)
+
+
+exploitation <- Exploitation(
+  rr = harvest_yr[["Ret"]],
+  rt = harvest_yr[["Rel"]],
+  repRate = 0.4,
+  # tagL = 0.01,
+  # tagM = 0.01
+  tagL = 0,
+  tagM = 0
+)
+
+```
+
+```{r}
+
+
+plot(
+  x = range(harvest_yr[["RelYear"]]),
+  y = range(exploitation[["Mu"]], exploitation[["MuPrime"]]),
+  type = "n",
+  las = 1, 
+  # xlab = "Year",
+  xlab = NA,
+  ylab = "Rate",
+  xaxt = "n",
+  yaxt = "n"
+)
+
+ytk <- axTicks(side = 2)
+
+# grid()
+
+points(
+  x = harvest_yr[["RelYear"]],
+  y = exploitation[["Mu"]],
+  col = "orange4",
+  pch = 19,
+  cex = 1.5
+)
+
+points(
+  x = harvest_yr[["RelYear"]],
+  y = exploitation[["MuPrime"]],
+  col = "steelblue",
+  pch = 19,
+  cex = 1.5
+)
+
+points(
+  x = 2015:2017,
+  y = harvest[harvest$TagVal %in% 150, "Rate"],
+  pch = "$"
+)
+
+mtext(
+  text = sprintf("Response rate: %.2f", exploitation[["RepRate"]]),
+  side = 3, adj = 1, col = "grey40"
+)
+mtext(
+  text = "Source: CDFW",
+  side = 3,
+  line = 0,
+  adj = 0,
+  col = "grey40"
+)
+
+
+axis(side = 1, at = xlbls, labels = xlbls, tck = -0.02)
+axis(side = 1, at = 1998:2017, labels = NA, tck = -0.01)
+axis(
+  side = 2,
+  at = ytk,
+  labels = format(ytk, digits = 2),
+  hadj = 0.85,
+  las = 1
+)
+
+
+```
+
+# Model
+
+```{r plot-lambda}
+
+# x & y values for drawing polygon as lower & upper bounds
+poly_list <- list(
+  x = c(
+    lambda_mu[["MuLevel"]][1],
+    lambda_mu[["MuLevel"]],
+    rev(lambda_mu[["MuLevel"]][-1])
+  ),
+  y = c(
+    lambda_mu[["LBLambda"]][1],
+    lambda_mu[["UBLambda"]],
+    rev(lambda_mu[["LBLambda"]][-1])
+  )
+)
+
+# create the plot with appropriate limits
+plot(
+  x = range(lambda_mu[["MuLevel"]]),
+  y = range(lambda_mu[, c("LBLambda", "UBLambda")]),
+  type = "n",
+  panel.last = abline(h = 1, col = "grey50", lty = 2, lwd = 0.25),
+  panel.first = polygon(poly_list, col = "grey90", border = NA),
+  las = 1,
+  xlab = "Exploitation",
+  ylab = "Lambda",
+  yaxt = "n"
+)
+
+lmd <- axTicks(side = 2)
+
+# add data (mean lambda over mu)
+lines(
+  x = lambda_mu[["MuLevel"]],
+  y = lambda_mu[["MeanLambda"]],
+  col = "steelblue",
+  lty = 1,
+  lwd = 3
+)
+
+# optional: add current mu
+# adding point might be better but would need to workout accurate y-val
+# points(x = 0.13, y = 0.98, col = "darkorange", pch = 19)
+abline(v = 0.13, col = "darkorange", lty = 2, lwd = 1)
+
+axis(
+  side = 2,
+  at = lmd,
+  labels = format(lmd, digits = 2),
+  hadj = 0.85,
+  las = 1
+)
+
+mtext(
+  text = "Reference: Blackburn et al. 2018",
+  side = 3,
+  line = 0,
+  adj = 0,
+  col = "grey40"
+)
+
+# optional: lower & upper bounds as lines
+# lines(
+#   x = c(lambda_mu[["MuLevel"]]),
+#   y = c(lambda_mu[["LBLambda"]]),
+#   col = "blue"
+# )
+# lines(
+#   x = c(lambda_mu[["MuLevel"]]),
+#   y = c(lambda_mu[["UBLambda"]]),
+#   col = "red"
+# )
+
+```
+
+

@@ -1,0 +1,183 @@
+---
+title: "White Sturgeon Length Frequency"
+author: "CDFW"
+date: ''
+output:
+  html_document:
+    fig_caption: yes
+    keep_md: no
+  github_document: default
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE)
+
+knitr::opts_knit$set(root.dir = "~/RProjects/SturgeonPopMetrics/")
+
+```
+
+```{r libraries}
+
+library(ggplot2)
+# library(reshape2)
+# library(knitr)
+
+```
+
+```{r data}
+
+# tagging data
+SturgeonAll <- readRDS(file = "data/tagging/SturgeonAll.rds")
+
+# card data
+SturgeonAlds <- readRDS(file = "data/card/SturgeonAlds.rds")
+Sturgeon0711 <- readRDS(file = "data/card/Sturgeon0711.rds")
+
+```
+
+```{r source-files}
+
+source(file = "source/source_stu_hr.R")
+source(file = "source/source_stu_mark-recap.R")
+source(file = "source/functions_global_general.R")
+source(file = "source/functions_global_record_count.R")
+source(file = "source/functions_global_data_subset.R")
+source(file = "source/methods_len_freq.R")
+
+```
+
+```{r plot-vars}
+
+# variables for plotting consistency
+
+fill_inslot <- scale_fill_manual(
+  "In Slot",
+  values = c('1' = "black", '0' = "grey50"),
+  labels = c('1' = 'Y', '0' = 'N')
+)
+
+```
+
+
+## Tagging
+
+```{r lf_wst_tag}
+
+lf_wst_tag <- GetLenFreq(
+  SturgeonAll,
+  colX = FL,
+  by = "RelYear",
+  subset = RelYear >= 2005 & Species %in% "White"
+)
+
+```
+
+```{r WstLfTag, fig.asp=2}
+
+plot(
+  lf_wst_tag,
+  lens = FL,
+  type = "POT",
+  fillBar = InSlot, 
+  addMed = TRUE,
+  addN = TRUE
+) +
+  facet_grid(facets = RelYear ~ .) +
+  fill_inslot +
+  xlab("Length bins (cm FL)")
+
+```
+
+Note: red (dashed) vertical line in plots indicates median length.
+
+## Card
+
+```{r card_combine}
+
+# combining pre-alds & alds data in order to plot complete timeseries of lf
+
+# head(Sturgeon0711)
+# head(SturgeonAlds)
+
+bool1 <- Sturgeon0711$Species %in% "White" &
+  Sturgeon0711$Length >= 10 & !is.na(Sturgeon0711$Length)
+
+bool2 <- SturgeonAlds$SturgeonType %in% "White" &
+  SturgeonAlds$Length >= 10 & !is.na(SturgeonAlds$Length)
+
+temp_0711 <- Sturgeon0711[bool1, c("Year", "Species", "Fate", "FL_cm")]
+temp_alds <- SturgeonAlds[bool2, c("ItemYear", "SturgeonType", "Fate", "FL_cm")]
+
+colnames(temp_alds) <- c("Year", "Species", "Fate", "FL_cm")
+
+wst_card <- rbind(temp_0711, temp_alds)
+
+rm(bool1, bool2, temp_0711, temp_alds)
+
+```
+
+```{r add-variable}
+
+# adding variable to wst_card to shade bars in plot
+
+wst_card$InSlot <- 0
+
+wst_card$InSlot[wst_card$FL_cm >= 102 & wst_card$FL_cm <= 152] <- 1
+
+```
+
+
+```{r lf_wst_card_r}
+
+lf_wst_card_r <- GetLenFreq(
+  wst_card,
+  colX = FL_cm,
+  by = "Year",
+  breaks = seq(20, 230, 5),
+  subset = Fate %in% "released" #& FL_cm < 230
+)
+
+```
+
+```{r lf_wst_card_k}
+
+lf_wst_card_k <- GetLenFreq(
+  wst_card,
+  colX = FL_cm,
+  by = "Year",
+  subset = Fate %in% "kept" #& FL_cm < 230
+)
+
+```
+
+#### Released White Sturgeon
+
+```{r WstLfCardr, fig.asp=2}
+
+plot(
+  lf_wst_card_r,
+  lens = FL_cm,
+  type = "POT",
+  fillBar = InSlot,
+  addMed = TRUE,
+  addN = TRUE
+) +
+  facet_grid(facets = Year ~ .) +
+  fill_inslot +
+  xlab("Length bins (cm FL)")
+
+```
+
+#### Kept White Sturgeon
+
+(plot needs formatting on x-axis)
+
+```{r WstLfCardk}
+
+plot(lf_wst_card_k, lens = FL_cm, type = "POT", addMed = TRUE, addN = TRUE) +
+  facet_grid(facets = Year ~ .) +
+  xlab("Length bins (cm FL)") #+
+  # coord_cartesian(xlim = c(101, 156))
+
+```

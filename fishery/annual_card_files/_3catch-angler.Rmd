@@ -1,0 +1,225 @@
+---
+
+---
+
+```{r catch-angler}
+
+# 02-Apr-2020: in ALDS-era (or at least from 2013 on) we can get count of
+# anglers who did not fish, fished not catch, and fished catch; here we explore
+# how to get per angler the number WSTkept, WSTreleased, and GST; for did not
+# fish = NA, for fished no catch = all 0; for fished & catch then get numbers
+# from `Card$AnglerCatch`
+
+# ******************************************************************************
+# TODO: check for duplicate records in `Card[["AldsReturned"]]`
+
+# table(vapply(catch_angler[["Data"]], FUN = nrow, FUN.VALUE = numeric(1L)))
+# 
+# ckval <- vapply(catch_angler[["Data"]], FUN = nrow, FUN.VALUE = numeric(1L))
+# 
+# catch_angler[checkval == 2, c("CustomerID", "ItemYear")]
+
+# Card[["AldsReturned"]][["LicenseID"]]
+# ******************************************************************************
+
+catch_angler <- Split(
+  data = Card[["AldsReturned"]],
+  subset = ItemYear >= 2013,
+  vars = c(Code, CustomerID, ItemYear),
+  splitVars = c(CustomerID, ItemYear),
+  drop = TRUE
+)
+
+# for desired data type
+catch_angler$ItemYear <- as.numeric(catch_angler[["ItemYear"]])
+
+```
+
+```{r catch-angler-summary}
+
+# TODO: chunk runs a bit slowly, but this should be OK for now, may tinker a bit
+# at a later date to improve speed (02-Apr-2020)
+
+# summarizes annual catch data by each angler
+catch_angler$Catch <- t(vapply(catch_angler[["Data"]], FUN = function(d) {
+  
+  code <- d[["Code"]]
+  n <- length(code)
+  
+  # for function output
+  out <- c(numeric(length = 4L), n)
+  names(out) <- c("WSTk", "WSTr", "GST", "Unk", "NRec")
+  out_na <- out
+  out_na[out == 0] <- NA
+  
+  # end function if angler did not catch sturgeon ("U"); if skunked ("UNS"),
+  # return all 0s; if did not fish ("NU") return all NA's
+  if (!any(code %in% "U")) {
+    if (any(code %in% "UNS")) return(out)
+    if (any(code %in% "NU")) return(out_na)
+  }
+  
+  # if n > 1, need to remove dups; could do if statement but this seems OK for
+  # now; b is boolean for subsetting data `d`
+  b <- !duplicated(d[c("CustomerID", "ItemYear")])
+  
+  # finds catch records by angler & year
+  bb <- Card[["AnglerCatch"]][["AnglerID"]] %in% d[b, "CustomerID"] &
+    Card[["AnglerCatch"]][["Year"]] %in% d[b, "ItemYear"]
+  
+  # subsets on specific catch records
+  dd <- Card[["AnglerCatch"]][bb, c("Species", "Fate")]
+  
+  # to summarize sturgeon catch
+  out[["WSTk"]] <- sum(dd[[1]] %in% "White" & dd[[2]] %in% "kept")
+  out[["WSTr"]] <- sum(dd[[1]] %in% "White" & dd[[2]] %in% "released")
+  out[["GST"]] <- sum(dd[[1]] %in% "Green")
+  out[["Unk"]] <- sum(dd[[1]] %in% "Unk")
+  
+  # return out with catch numbers
+  out
+  
+}, FUN.VALUE = numeric(5L)))
+# end vapply
+
+```
+
+<!-- annual summary using `catch_angler` -->
+
+```{r catch-angler-year}
+
+catch_angler_year <- Split(
+  data = catch_angler,
+  # subset = ,
+  vars = Catch,
+  splitVars = ItemYear
+)
+
+# for simplified column names
+colnames(catch_angler_year) <- c("Year", "Data")
+
+# to simplify working with matrix rather than Catch as dataframe with one field
+# (a matrix with WSTk, WSTr, etc.)
+catch_angler_year$Data <- lapply(
+  catch_angler_year[["Data"]],
+  FUN = function(x) x[["Catch"]]
+)
+
+# for desired datatype
+catch_angler_year$Year <- as.numeric(catch_angler_year[["Year"]])
+
+```
+
+```{r no-catch}
+
+# tabulates did not fish (DNF) & fished no catch (FNC)
+
+# NOTE: FNC values herein are higher than `card_summary` values; reason is that
+# some anglers reported fishing & catching but then did not enter catch (or
+# forgot or selected incorrectlty fished and catch); then `out` in
+# `catch-angler-summary` chunk contains all 0s indicating no catch; DNF is
+# unaffected
+
+# TODO: put some identifier on the anlgers reporting fish+catch but then did not
+# report any catch (03-Apr-2020)
+
+catch_angler_year$NoCatch <- t(
+  vapply(catch_angler_year[["Data"]], FUN = function(d) {
+    d <- d[, c("WSTk", "WSTr", "GST", "Unk")]
+    # d must be a matrix (array) with 2+ dimensions to pass to `rowSums`
+    b <- is.null(dim(d))
+    dnf <- if (b) sum(is.na(d)) else rowSums(is.na(d))
+    fnc <- if (b) sum(d %in% 0) else rowSums(d == 0, na.rm = TRUE)
+    c(DNF = sum(dnf == 4), FNC = sum(fnc == 4))
+  }, FUN.VALUE = numeric(2L))
+)
+
+```
+
+```{r wst-kept}
+
+# by WST kept (0, 1, 2, or 3) tabulates angler count by sturgeon (WST, GST, or
+# UNK) released as 0, 1, 2, 3, 4, & 5+
+
+# TODO: output format is OK but summary from here might be challenging (at least
+# in terms of displaying all years); look for ways to change output or possibly
+# plot some data (03-Apr-2020)
+
+catch_angler_year$WSTkept <- lapply(
+  catch_angler_year[["Data"]], FUN = function(d) {
+    others <- c("WSTr", "GST", "Unk")
+    # d must be a matrix (array) with 2+ dimensions to pass to `rowSums`
+    b <- is.null(dim(d[, others]))
+    o <- if (b) sum(d[, others]) else rowSums(d[, others])
+    lbls <- c(paste0(0:4), "5+")
+    o <- cut(o, breaks = c(0:5, Inf), labels = lbls, right = FALSE)
+    table(o, d[, "WSTk"], dnn = NULL)
+  }
+)
+
+```
+
+```{r catch-angler-gst}
+
+# by removing NA we get data on anglers who reported & who went fishing (may
+# have gotten skunked, but they did fish)
+
+# Anglers = number who reported & who went fishing
+# AngGST = number anglers who caught a GST
+# Count = total # GST caught per year
+# MaxAngler = max # GST per single angler
+# Frac = fraction of anglers reporting having fished who caught a GST
+#        (includes those who got skunked but not those who did not fish)
+# DNF = did not fish
+
+catch_angler_year$GST <- t(vapply(
+  catch_angler_year[["Data"]], FUN = function(d) {
+    g <- Filter(f = Negate(is.na), x = d[, "GST"])
+    r <- mean(g > 0)
+    nf <- sum(is.na(d[, "GST"]))
+    c(
+      Anglers = length(g),
+      AngGST = length(g) * r,
+      Count = sum(g),
+      MaxAngler = max(g),
+      Frac = r,
+      DNF = nf
+    )
+  }, FUN.VALUE = numeric(6L)
+))
+
+```
+
+```{r catch-release}
+
+# 13-Apr-2020: changed it to get fraction rather than sum; using `==0` & `na.rm
+# = TRUE` will not include 'did-not-fish' anglers
+
+catch_angler_year$CatchRelease <- t(vapply(
+  catch_angler_year[["Data"]], FUN = function(d) {
+    others <- c("WSTr", "GST", "Unk")
+    # d must be a matrix (array) with 2+ dimensions to pass to `rowSums`
+    b <- is.null(dim(d[, others]))
+    o <- if (b) sum(d[, others]) else rowSums(d[, others])
+    # sum(d[, "WSTk"] %in% 0 & o > 0)
+    c(
+      Anglers = nrow(d),
+      Frac = mean(d[, "WSTk"] == 0 & o > 0, na.rm = TRUE)
+    )
+  }, FUN.VALUE = numeric(2L)
+))
+
+```
+
+```{r reporting-wst-kept}
+
+# of reporting anglers - fraction who kept 0, 1, 2, 3 WST & who did not fish
+
+catch_angler_year$ReportWSTk <- t(vapply(
+  catch_angler_year[["Data"]], FUN = function(d) {
+    k <- factor(d[, "WSTk"], levels = c(0:3, NA), exclude = NULL)
+    c(Anglers = nrow(d), prop.table(table(k)))
+  }, FUN.VALUE = numeric(6L)
+))
+
+```

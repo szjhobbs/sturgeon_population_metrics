@@ -1,0 +1,162 @@
+---
+output:
+   github_document:
+     pandoc_args: --webtex
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_knit$set(
+  root.dir = "~/RProjects/SturgeonPopMetrics/",
+  global.par = TRUE
+)
+
+```
+
+```{r src-file, echo=FALSE}
+
+source(file = "presentations/.base-par.R")
+
+```
+
+## Introduction
+
+
+
+## Libraries
+
+We load the `sportfish` package, currently available on GitHub. For now (05-Feb-2019), this is the only package required.
+
+```{r load-libraries}
+
+library(sportfish)
+# library(package)
+
+```
+
+## Load Data
+
+We load all `.rds` files from directory `data/baystudy`. To keep our workspace clean, we load these files into a new environment called `BayStudy`.
+
+
+```{r load-data}
+
+# the data directory for bay study
+data_dir <- "data/baystudy"
+
+# list.files(path = data_dir, pattern = ".rds")
+BayStudy <- new.env()
+
+ReadRDSFiles(fileDir = data_dir, envir = BayStudy)
+
+# clean up
+rm(data_dir)
+
+```
+
+## Variables
+
+Here we create some variables we'll use throughout this process. We create them here and now for convenience.
+
+```{r variables}
+
+# # columns in data by which to aggregate
+# # cols_agg <- c("Year", "Survey", "Station", "Net", "Tow", "Species", "AgeCat")
+# cols_agg <- c("Year", "Survey", "Bay", "Net", "Series")
+# 
+# cols_match <- intersect(
+#   x = colnames(BayStudy$BayStudyTows),
+#   y = colnames(BayStudy$StuCatch)
+# )
+# 
+# ntows <- nrow(BayStudy$BayStudyTows)
+
+```
+
+## Sampling
+
+```{r station-count-all}
+
+station_count_all <- aggregate(
+  formula = Station ~ Year + Survey,
+  data = BayStudy[["BayStudyTows"]],
+  FUN = function(x) length(unique(x))#,
+  # subset = Series %in% 1 & Net %in% 2
+  # subset = Series %in% 1
+  # subset = !Flag & Series %in% 1 & Net %in% 2
+)
+
+```
+
+```{r}
+
+with(data = station_count_all, expr = {
+  
+  xrng <- range(Survey)
+  yrng <- range(Year)
+  
+  rect_adj <- 0.50
+  
+  clr <- rgb(
+    red = 0.3,
+    green = 0,
+    blue = 0,
+    alpha = Station / max(Station)
+  )
+  
+  plot(
+    x = xrng,
+    y = yrng,
+    type = "n",
+    bty = "n",
+    xaxt = "n",
+    yaxt = "n",
+    xlab = NA,
+    ylab = NA
+  )
+  
+  rect(
+    xleft = Survey - rect_adj,
+    ybottom = Year - rect_adj,
+    xright = Survey + rect_adj,
+    ytop = Year + rect_adj,
+    col = clr,
+    border = NA,
+    xpd = FALSE
+  )
+  
+  axis(
+    side = 3,
+    at = 1:12,
+    labels = 1:12,
+    col = "transparent",
+    col.ticks = "grey30"
+  )
+  
+  axis(
+    side = 2,
+    at = 1980:2018,
+    labels = 1980:2018,
+    col = "transparent",
+    col.ticks = "grey30",
+    las = 1
+  )
+  
+  
+})
+
+
+
+
+```
+
+
+## Save Summary Data
+
+```{r save-yci}
+# write.csv(yci, file = "indices/yci_bs.csv", row.names = FALSE)
+```
+
+---
+CDFW, SportFish Unit  
+`r Sys.Date()`

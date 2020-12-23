@@ -1,0 +1,819 @@
+---
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_knit$set(root.dir = "~/RProjects/SturgeonPopMetrics/")
+
+```
+
+## Introduction
+
+Herein, we calculate White Sturgeon relative abundance using CDFW mark-recaptured data. Also, <GREEN STURGEON??>
+
+## Libraries
+
+We load the `sportfish` package, currently available on GitHub. For now (12-Feb-2019), this is the only package required.
+
+```{r load-libraries}
+
+library(sportfish)
+# library(package)
+
+```
+
+## Load Data
+
+We load all `.rds` files from directory `data/tagging`. To keep our workspace clean, we load these files into a new environment called `Tagging`.
+
+```{r load-data}
+
+# the data directory for bay study
+data_dir <- "data/tagging"
+
+# list.files(path = data_dir, pattern = ".rds")
+Tagging <- new.env()
+
+ReadRDSFiles(fileDir = data_dir, envir = Tagging)
+
+notes <- readLines(file.path(data_dir, "data-log"), n = 2)
+notes <- paste0(notes[1], notes[2])
+
+# clean up
+rm(data_dir)
+
+```
+
+**Note**: `r notes`.
+
+## Variables
+
+Here we create some variables we'll use throughout this process. We create them here and now for convenience.
+
+```{r variables, echo=TRUE}
+
+net_set_id <- factor(
+  Tagging[["Sturgeon"]][["NetSetId"]],
+  levels = Tagging[["Effort"]][["NetSetId"]]
+)
+
+
+```
+
+## Method
+
+Step-by-step we will document how we arrive at the final numbers (CPUE). It's a multi-step process that could be helped by some custom functions, but for now we'll so all process details.
+
+#### Catch per Net Set
+
+Here we need to get catch (for White Sturgeon) for each net set (i.e., drift). Even zero catch is important, as we'll eventually calculate an average. Right now, we want to get catch for each length category (`sub`, `leg`, `ovr`), within current slot limit, and total.
+
+We split tagging data on each net set id (`net_set_id`). This allows for summaries by date by net set.
+
+<!--To ensure both species (White & Green) and all age categories (`AgeCat`) are included, we convert both fields as factors. We'll eventually apply `base::table()`all levels will be included, using 0 for no catch. -->
+
+```{r stu-net-set, echo=TRUE}
+
+stu_net_set <- split(Tagging[["Sturgeon"]], f = net_set_id, drop = FALSE)
+
+```
+
+For White Sturgeon, we summarize per net set (net set id) count by size class (`sub`, `leg`, `ovr`), within current slot (`InSlot`), and total. Because we set `drop = FALSE` above, net sets with no catch return 0 for each column in `wst_catch`.
+
+```{r wst-catch, echo=TRUE}
+
+wst_catch <- vapply(stu_net_set, FUN = function(x) {
+  
+  b <- x[["Species"]] %in% "White"
+  
+  lc <- factor(
+    x[b, "LenCat"],
+    levels = c("sub", "leg", "ovr"),
+    exclude = c("not", "unk")
+  )
+  
+  slt <- sum(x[["InSlot"]], na.rm = TRUE)
+  
+  c(table(lc), slt = slt, tot = sum(b))
+  
+}, FUN.VALUE = numeric(5L))
+
+# for column orientation
+wst_catch <- t(wst_catch)
+
+```
+
+```{r net-set-check, results='hide'}
+
+# for vapply() output comparison
+nms <- names(stu_net_set)
+
+# should be TRUE
+identical(x = as.integer(nms), y = Tagging[["Effort"]][["NetSetId"]])
+
+# clean up
+rm(stu_net_set, nms, net_set_id)
+
+```
+
+#### Fishing Effort
+
+We use `sportfish::TimeDiffStu()` to calculate fishing effort (in this case, net fathom hour [nfh]). See `help("TimeDiffStu")` or metadata (*in process*) for detailed explanation of the various calculations. We calculate net fathom hour using the equation below, performed in `NetEffort()`.
+
+$$nfh_n=T \times L$$
+
+where 
+- *n* = each net set
+- *T* = true or estimated soak time  
+- *L* = net length (in fathoms)
+
+```{r fishing-effort, echo=TRUE}
+
+fishing_effort <- with(data = Tagging[["Effort"]], expr = {
+  TimeDiffStu(
+    sStart = SetStart,
+    sEnd = SetEnd,
+    rStart = RetrieveStart,
+    rEnd = RetrieveEnd
+  )
+})
+
+nfh <- fishing_effort$NetEffort(netLength = Tagging[["Effort"]][["Fathoms"]])
+
+```
+
+#### Catch per Unit Effort (CPUE)
+
+Because `length(nfh) == dim(wst_catch)[1]` is `TRUE`, we can simply calculate CPUE by $\frac{wst\_catch}{nfh}\times100$. We typically multiply CPUE by 100 to remedy small numbers. The end result is daily cpue by net set by vessel.
+
+```{r cpue-daily}
+
+CpueWST <- data.frame(Year = sort(unique(Tagging[["Effort"]][["RelYear"]])))
+
+# for correct ordering when retrieving from WaterConditions dataframe
+index <- match(
+  x = Tagging[["Effort"]][["NetSetId"]],
+  table = Tagging[["WaterConditions"]][["NetSetId"]]
+)
+
+CpueWST$Data <- split(
+  data.frame(
+    rdate = Tagging[["Effort"]][["RelDate"]],
+    vsl = Tagging[["Effort"]][["Vessel"]],
+    tide = Tagging[["WaterConditions"]][index, "Tide"],
+    effort = nfh,
+    catch = wst_catch,
+    cpue = (wst_catch / nfh) * 100,
+    stringsAsFactors = FALSE
+  ),
+  f = Tagging[["Effort"]][["RelYear"]]
+)
+
+# clean up
+rm(wst_catch)
+
+```
+
+We average daily CPUE per year to get annual CPUE. We also calculate variance (of the mean) along with total annual catch.
+
+```{r cpue-annual}
+
+cpue <- vapply(CpueWST[["Data"]], FUN = function(x) {
+  
+  ctc <- grepl(pattern = "^catch", x = colnames(x))
+  cpe <- grepl(pattern = "^cpue", x = colnames(x))
+  
+  c(
+    n = sum(!is.na(x[["vsl"]])),
+    nvsl = length(unique(x[["vsl"]][!is.na(x[["vsl"]])])),
+    nfh = sum(x[["effort"]], na.rm = TRUE),
+    colSums(x[ctc]),
+    m = colMeans(x[cpe], na.rm = TRUE),
+    v = apply(x[cpe], MARGIN = 2, FUN = var, na.rm = TRUE)
+  )
+  
+}, FUN.VALUE = numeric(18L))
+
+CpueWST$CPUE <- t(cpue)
+
+# clean up
+rm(cpue)
+
+```
+
+```{r}
+
+with(data = as.data.frame(CpueWST[["CPUE"]]), expr = {
+  
+  # for subsetting
+  b <- CpueWST[["Year"]] > 1967
+  
+  # for ease of calculations & plotting
+  yr <- CpueWST[b, "Year"]
+  mn <- m.cpue.slt[b]
+  vr <- v.cpue.slt[b]
+  nn <- n[b]
+  
+  # for error bars
+  se <- sqrt(vr / nn)
+  ci <- se * qnorm(1 - 0.05 / 2)
+  
+  rng_yr <- range(yr)
+  
+  # par(plt = par("usr") * c(1.01, 0.99, 1, 1))
+  
+  plot(
+    x = rng_yr,
+    y = range(mn - ci, mn + ci, na.rm = TRUE),
+    type = "n",
+    xlab = "Year",
+    ylab = "CPUE"
+  )
+  
+  # for custom grid lines and background
+  par(xaxp = c(rng_yr, diff(rng_yr)))
+  par(yaxp = par("yaxp") * c(1, 1, 2))
+  grid(lwd = 1000, col = "grey90")
+  grid(lty = 1, col = "white", lwd = 1)
+  
+  # abline(h = median(mn), col = 2)
+  segments(x0 = yr, y0 = mn - ci, y1 = mn + ci, lwd = 2)
+  points(x = yr, y = mn, pch = 20, col = "orange3", cex = 1)
+  mtext(
+    text = bquote(Median[overall] == .(round(median(mn), digits = 2))),
+    adj = 0,
+    col = "grey25"
+  )
+})
+
+# plot(CPUE[, "m.cpue.slt"] ~ Year, data = CpueWST, subset = Year > 1967)
+# plot(CPUE[, "m.cpue.leg"] ~ Year, data = CpueWST, subset = Year > 1967)
+
+
+```
+
+```{r cpue-est, eval=FALSE}
+
+# 12-Aug-2019: including here output for making graphic for White Sturgeon
+# Enhanced Status Report (ESR); per Paul Rielly's request, we need to make
+# better graphics (in short)
+
+# png(filename = "testMy.png", width = 6, height = 4, units = "in", res = 600)
+
+par(
+  # bg = "white",
+  # fg = "black",
+  # col = "grey70",
+  # mar: c(bottom, left, top, right)
+  # mar = c(4, 4, 1, 1) + 0.1
+  mar = c(5, 6, 1, 1),
+  cex.axis = 1.5,
+  cex.lab = 1.25,
+  col.axis = "grey40",
+  col.lab = "black",
+  las = 1,
+  bty = "n",
+  mgp = c(3, 0.75, 0),
+  tcl = -0.3,
+  lend = 1
+)
+
+with(data = as.data.frame(CpueWST[["CPUE"]]), expr = {
+  
+  # for subsetting
+  b <- CpueWST[["Year"]] > 1967
+  
+  # for ease of calculations & plotting
+  yr <- CpueWST[b, "Year"]
+  mn <- m.cpue.slt[b]
+  vr <- v.cpue.slt[b]
+  nn <- n[b]
+  
+  # for error bars
+  se <- sqrt(vr / nn)
+  ci <- se * qnorm(1 - 0.05 / 2)
+  
+  rng_yr <- c(min(yr), 2018)
+  
+  # par(plt = par("usr") * c(1.01, 0.99, 1, 1))
+  
+  plot(
+    x = c(rng_yr),
+    # y = range(mn - ci, mn + ci, na.rm = TRUE),
+    y = range(m.cpue.slt, na.rm = TRUE),
+    type = "n",
+    xlab = "Year",
+    ylab = "CPUE",
+    xlim = c(rng_yr[1] + 1, rng_yr[2] - 1),
+    xaxt = "n"
+  )
+  
+  # for custom grid lines and background
+  par(xaxp = c(rng_yr, diff(rng_yr)))
+  par(yaxp = par("yaxp") * c(1, 1, 2))
+  grid(lwd = 1000, col = "grey90")
+  grid(lty = 1, col = "white", lwd = 1)
+  
+  # abline(h = median(mn), col = 2)
+  # segments(x0 = yr, y0 = mn - ci, y1 = mn + ci, lwd = 2)
+  # points(x = yr, y = mn, pch = 20, col = "orange3", cex = 1)
+  lines(
+    x = yr,
+    y = mn,
+    type = "h",
+    lend = 1,
+    lwd = 10,
+    col = rgb(red = 0, green = 0, blue = 0, alpha = 0.5)
+  )
+  # mtext(
+  #   text = bquote(Median[overall] == .(round(median(mn), digits = 2))),
+  #   adj = 0,
+  #   col = "grey25"
+  # )
+  
+  # text for no sampling
+  # sampled <- rng_yr[1]:2018 %in% yr
+  # points(
+  #   x = (rng_yr[1]:2018)[!sampled],
+  #   y = rep(0, times = sum(!sampled)),
+  #   pch = 'x',
+  #   cex = 0.5,
+  #   col = 2
+  # )
+  
+  # text(x = 2018, y = 0, labels = "no sampling", srt = 90, adj = 0, cex = 0.75)
+  axis(
+    side = 1,
+    at = (1970:2018)[c(TRUE, rep(FALSE, times = 4))],
+    labels = (1970:2018)[c(TRUE, rep(FALSE, times = 4))],
+    col = "transparent",
+    col.ticks = "black"
+  )
+  
+})
+
+# dev.off()
+
+
+```
+
+```{r}
+
+b <- CpueWST[["Year"]] > 1967
+
+yrng <- range(
+  vapply(CpueWST$Data[b], FUN = function(x) {
+    range(x[["cpue.slt"]], na.rm = TRUE)
+  }, FUN.VALUE = numeric(2L))
+)
+
+xrng <- range(CpueWST$Year[b])
+
+plot(xrng, yrng, type = "n", xlim = xrng + c(1, -1))
+
+par(xaxp = c(xrng, diff(xrng)))
+par(yaxp = par("yaxp") * c(1, 1, 2))
+grid(lwd = 1000, col = "grey90")
+grid(lty = 1, col = "white", lwd = 1)
+
+r <- Map(function(x, y) {
+  points(
+    x = rep(x, times = nrow(y)),
+    # x = jitter(rep(x, times = nrow(y)), factor = 0.001),
+    y = y[["cpue.slt"]],
+    col = rgb(red = 0, green = 0, blue = 0, alpha = 0.1),
+    pch = 20
+  )
+  points(
+    x = x,
+    y = mean(y[["cpue.slt"]], na.rm = TRUE),
+    # y = median(y[["cpue.slt"]], na.rm = TRUE),
+    # col = "red2",
+    col = rgb(red = 0.5, green = 0, blue = 0, alpha = 0.5),
+    lwd = 2,
+    cex = 1.25,
+    pch = 1
+  )
+  
+  # mean(y[["cpue.tot"]] == 0, na.rm = TRUE)
+  mean(y[["catch.tot"]] > 0, na.rm = TRUE)
+  
+}, CpueWST$Year[b], CpueWST$Data[b])
+
+# for 'minor' tick labels
+xat <- seq(from = xrng[1], to = xrng[2], by = 1)
+
+axis(
+  side = 1,
+  at = xat[xat %% 5 == 0],
+  labels = NA,
+  tck = -0.01,
+  col = "transparent",
+  col.ticks = "black"
+)
+
+CpueWST$FracCatch <- double(length = nrow(CpueWST))
+CpueWST$FracCatch[b] <- unlist(r, use.names = FALSE)
+
+```
+
+```{r}
+
+# trying to set plotting region using `usr`
+
+plot(FracCatch ~ Year, data = CpueWST, subset = b, type = "n")
+# par(usr = par("usr") * c(0.9995, 1.0005, 1, 1))
+par(xaxp = c(xrng, diff(xrng)))
+
+# par(yaxp = par("yaxp") * c(1, 1, 2))
+grid(lwd = 1000, col = "grey90")
+grid(lty = 1, col = "white", lwd = 1)
+# points(FracCatch ~ Year, data = CpueWST, subset = b, type = "c")
+
+# a possibility
+mod <- lm(formula = FracCatch ~ Year, data = CpueWST, subset = Year > 2000)
+
+mod2 <- lm(
+  formula = FracCatch ~ Year,
+  data = CpueWST,
+  subset = Year >= 2005 & Year <= 2016
+)
+# summary(mod)
+lines(
+  x = CpueWST$Year[CpueWST$Year > 2000],
+  y = mod$fitted.values,
+  lwd = 2,
+  col = "grey50"
+)
+
+lines(
+  x = CpueWST$Year[CpueWST$Year >= 2005 & CpueWST$Year <= 2016],
+  y = mod2$fitted.values,
+  lwd = 2,
+  col = "red"
+)
+
+points(
+  x = CpueWST[b, "Year"],
+  y = CpueWST[b, "FracCatch"],
+  col = (CpueWST[["CPUE"]][b, "n"] > 200) + 1,
+  # col = (CpueWST[["CPUE"]][b, "nfh"] > 20000) + 1,
+  pch = CpueWST[["CPUE"]][b, "nvsl"] + 20,
+  bg = "white",
+  # bg = (CpueWST[["CPUE"]][b, "n"] > 150) + 10,
+  cex = 1.1
+)
+
+```
+
+```{r}
+
+t(vapply(CpueWST$Data[b], FUN = function(x) {
+  n <- nrow(x)
+  frac <- mean(x[["catch.tot"]] > 0, na.rm = TRUE)
+  c(n = n, frac = frac)
+}, FUN.VALUE = numeric(2L)))
+
+lapply(CpueWST$Data[b], FUN = function(x) {
+  res <- vapply(x, FUN = function(y) {
+    if (!is.numeric(y)) return(c(NA, NA))
+    range(y, na.rm = TRUE)
+  }, FUN.VALUE = numeric(2L))
+  t(res)
+})
+
+
+
+
+
+```
+
+```{r plot-bp-effort}
+
+# plotting annual variation in effort per each net set
+
+rng_effort <- vapply(CpueWST$Data[b], FUN = function(d) {
+  range(d[["effort"]], na.rm = TRUE)
+}, FUN.VALUE = numeric(2L))
+
+plot(
+  x = xrng,
+  y = range(rng_effort),
+  type = "n",
+  xlab = "Year",
+  ylab = "Net-fathom hour"#,
+  # xaxt = "n"
+)
+
+# par(yaxp = par("yaxp") * c(1, 1, 2))
+par(xaxp = c(xrng, diff(xrng)))
+grid(lwd = 1000, col = "grey90")
+grid(lty = 1, col = "white", lwd = 1)
+
+# for custom x-axis plotting (still tinkering with tick marks & at how many
+# intervals -- 10-Jul-2019)
+xticks <- seq(from = xrng[1], to = xrng[2], by = 1)
+axis(
+  side = 1,
+  at = xticks[xticks %% 5 == 0],
+  # labels = xticks[xticks %% 10 == 0],
+  labels = NA,
+  tck = -0.01,
+  col = "transparent",
+  col.ticks = "black"
+)
+
+# for plotting each annual boxplot
+effort_stats <- Map(function(d) {
+  yr <- as.numeric(format(d[["rdate"]], format = "%Y"))
+  col <- rgb(red = 0, green = 0, blue = 0, alpha = 0.5)
+  # points(x = yr, y = d[["effort"]], col = col, pch = 20)
+  bp <- boxplot(d[["effort"]], plot = FALSE)
+  bxp(
+    z = bp,
+    add = TRUE,
+    at = unique(yr),
+    frame.plot = FALSE,
+    whisklty = 1,
+    staplelty = 0,
+    outpch = 20,
+    outcex = 0.7,
+    outcol = col,
+    # medcol = "darkblue",
+    yaxt = "n"
+  )
+  
+  # function output
+  # bp$stats
+  bp$n
+  
+}, CpueWST$Data[b])
+# end Map loop
+
+```
+
+```{r annual-net-length}
+
+with(data = Tagging[["Effort"]], expr = {
+  b <- RelYear > 1967
+  dn <- list("Year", "Net length (fathom)")
+  table(RelYear[b], Fathoms[b], dnn = dn)
+})
+
+```
+
+```{r tide-check, eval=FALSE}
+
+# to check (we began recording 'tide' in 2007); some in 2011 NA as these are the
+# rescue fish not tagged from a vessel or during normal tagging operations
+lapply(CpueWST$Data, FUN = function(d) {
+  if (all(is.na(d[["tide"]]))) return("all NA")
+  table(d[["tide"]], useNA = "ifany")
+})
+
+```
+
+```{r plot-possibilities, eval=FALSE}
+
+# three plotting ideas if desired
+
+# standard boxplot for each year (from 2007 onward)
+boxplot(cpue.tot ~ tide, data = CpueWST$Data$`2017`)
+
+# similar to boxplot but showing all data points
+plot(
+  formula = cpue.tot ~ jitter(as.numeric(factor(tide))),
+  data = CpueWST$Data$`2017`,
+  col = rgb(red = 0, green = 0, blue = 0, alpha = 0.5)
+)
+
+# a continuation of above but would need some 'dodging' to mitigate for
+# overplotting and show more clearly each tide type
+plot(x = c(2007, 2017), y = c(0, 35), type = "n")
+
+Map(function(d, y) {
+  
+  if (!all(is.na(d[["tide"]]))) {
+    # n <- nrow(d)
+    points(
+      x = rep(y, times = nrow(d)),
+      y = d[["cpue.tot"]],
+      col = as.numeric(factor(d[["tide"]]))
+    )
+  }
+  
+}, CpueWST[["Data"]], CpueWST[["Year"]])
+
+```
+
+```{r}
+
+# plot(x = c(2007, 2017), y = c(0, 5), type = "n")
+cpue_wst_tide <- lapply(CpueWST[["Data"]], FUN = function(d) {
+  
+  # yr <- as.numeric(format(d[["rdate"]], format = "%Y"))
+  # 
+  # res <- aggregate(
+  #   formula = cpue.tot ~ yr + tide,
+  #   data = d,
+  #   FUN = DescStat,
+  #   na.action = na.pass
+  # )
+  # 
+  # out <- data.frame(
+  #   Year = res[["yr"]],
+  #   Tide = res[["tide"]],
+  #   res[["cpue.tot"]],
+  #   stringsAsFactors = FALSE
+  # )
+  # 
+  # out[] <- lapply(out, FUN = unlist, use.names = FALSE)
+  # 
+  # if (nrow(out) != 0) {
+  #   # print(par("usr"))
+  #   usr <- par("usr")
+  #   y1 <- min(usr[3], out[["Avg"]])
+  #   y2 <- max(usr[4], out[["Avg"]])
+  #   # par(usr = c(usr[1:2], y1 * 0.95, y2 * 1.05))
+  #   # axis(side = 2, at = 0:10, labels = 0:10, xpd = T)
+  #   points(Avg ~ Year, data = out, col = as.numeric(factor(out$Tide)))
+  # }
+  #   
+  # out
+  
+  # if (!all(is.na(d[["tide"]]))) {
+  #   # presence | absence
+  #   v <- d[["cpue.tot"]] > 0
+  #   # v <- d[["catch.tot"]]
+  #   g <- glm(formula = v ~ tide - 1, data = d, family = binomial)
+  #   # g <- glm(formula = v ~ tide - 1, data = d, family = poisson)
+  #   # summary(g)
+  #   # predict(
+  #   #   object = g,
+  #   #   list(tide = c(Ebb = "ebb", Fld = "flood", Slc = "slack"))
+  #   # )
+  #   g
+  # }
+  
+  if (all(is.na(d[["tide"]]))) return(NULL)
+  
+  yr <- as.numeric(format(d[["rdate"]], format = "%Y"))
+  
+  res <- aggregate(
+    formula = cpue.tot ~ yr + tide,
+    data = d,
+    FUN = DescStat,
+    na.action = na.pass
+  )
+  
+  frac <- aggregate(
+    formula = I(cpue.tot > 0) ~ yr + tide,
+    data = d,
+    FUN = mean,
+    na.action = na.pass
+  )
+  
+  frac2 <- aggregate(
+    formula = I(cpue.tot > 0) ~ yr + tide,
+    data = d,
+    FUN = function(x) {
+      sum(x / nrow(d))
+    },
+    na.action = na.pass
+  )
+  
+  # for desired output
+  out <- data.frame(
+    Year = res[["yr"]],
+    Tide = res[["tide"]],
+    res[["cpue.tot"]],
+    FracCatch = frac[[3]],
+    FracCatch2 = frac2[[3]],
+    stringsAsFactors = FALSE
+  )
+  
+  # because DescStat output is a list
+  out[] <- lapply(out, FUN = unlist, use.names = FALSE)
+  
+  # modeling (need to decide here or within another function)
+  v <- d[["cpue.tot"]] > 0
+  # g <- glm(formula = v ~ tide - 1, data = d, family = binomial)
+  g <- glm(formula = v ~ tide, data = d, family = binomial)
+  
+  # list(
+  #   Data = out,
+  #   GLM = g,
+  #   Mean = mean(d[["cpue.tot"]], na.rm = TRUE),
+  #   Mean = tapply(v, d[["tide"]], mean)
+  # )
+  out
+  
+})
+
+cpue_wst_tide <- do.call(what = rbind, args = cpue_wst_tide)
+rownames(cpue_wst_tide) <- NULL
+
+```
+
+```{r}
+
+ci <- with(data = cpue_wst_tide, expr = {
+  se <- sqrt(Var / N)
+  se * qnorm(1 - 0.05 / 2)
+})
+
+col_tide <- setNames(
+  object = c("orange2", "steelblue", "grey30"),
+  nm = c("ebb", "flood", "slack")
+)
+
+
+plot(
+  x = range(cpue_wst_tide[["Year"]]),
+  y = range(cpue_wst_tide[["Avg"]] - ci, cpue_wst_tide[["Avg"]] + ci),
+  type = "n"
+)
+
+par(xaxp = c(xrng, diff(xrng)))
+
+# par(yaxp = par("yaxp") * c(1, 1, 2))
+grid(lwd = 1000, col = "grey90")
+grid(lty = 1, col = "white", lwd = 1)
+
+segments(
+  x0 = cpue_wst_tide[["Year"]] + c(-0.15, 0, 0.15),
+  y0 = cpue_wst_tide[["Avg"]] - ci,
+  y1 = cpue_wst_tide[["Avg"]] + ci,
+  # col = as.numeric(factor(cpue_wst_tide[["Tide"]]))
+  col = col_tide[cpue_wst_tide[["Tide"]]]
+)
+
+points(
+  x = cpue_wst_tide[["Year"]] + c(-0.15, 0, 0.15),
+  y = cpue_wst_tide[["Avg"]],
+  col = "white",
+  pch = 19,
+  cex = 1.2
+)
+
+points(
+  x = cpue_wst_tide[["Year"]] + c(-0.15, 0, 0.15),
+  y = cpue_wst_tide[["Avg"]],
+  # col = as.numeric(factor(cpue_wst_tide[["Tide"]]))
+  col = col_tide[cpue_wst_tide[["Tide"]]]
+)
+
+
+
+```
+
+
+```{r}
+
+plot(
+  x = range(cpue_wst_tide[["Year"]]),
+  y = range(cpue_wst_tide[["FracCatch"]]),
+  # y = range(cpue_wst_tide[["FracCatch2"]]),
+  type = "n"
+)
+
+par(xaxp = c(xrng, diff(xrng)))
+
+# par(yaxp = par("yaxp") * c(1, 1, 2))
+grid(lwd = 1000, col = "grey90")
+grid(lty = 1, col = "white", lwd = 1)
+
+points(
+  # x = cpue_wst_tide[["Year"]] + c(-0.15, 0, 0.15),
+  x = cpue_wst_tide[["Year"]],
+  y = cpue_wst_tide[["FracCatch"]],
+  # y = cpue_wst_tide[["FracCatch2"]],
+  # col = as.numeric(factor(cpue_wst_tide[["Tide"]]))
+  col = col_tide[cpue_wst_tide[["Tide"]]],
+  lwd = 1.9
+)
+
+# TODO: check weighted mean for FracCatch
+# TODO: run glm & understand results
+
+
+```
+
+
+```{r save-wst_cpue}
+
+# cln <- c("year", colnames(CpueWST$CPUE))
+# dim_cpue <- dim(CpueWST[["CPUE"]])
+
+write.csv(
+  data.frame(year = CpueWST[["Year"]], CpueWST[["CPUE"]]),
+  file = "abundance/cpue_wst.csv",
+  row.names = FALSE
+)
+
+```
+
+---
+CDFW, SportFish Unit  
+`r Sys.Date()`

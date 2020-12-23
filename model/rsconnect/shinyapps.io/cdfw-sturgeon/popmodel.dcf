@@ -1,0 +1,13 @@
+name: popmodel
+title: popmodel
+username:
+account: cdfw-sturgeon
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 1245838
+bundleId: 3503610
+url: https://cdfw-sturgeon.shinyapps.io/popmodel/
+when: 1597183931.2151
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: pop_model_params.html|pop_model_params.Rmd|pop_model_testing.Rmd|ReadMe|relative_retention_diff.html|relative_retention_diff.Rmd|SBData.csv

@@ -1,0 +1,24 @@
+---
+
+---
+
+```{r setup8, include=FALSE}
+
+knitr::opts_knit$set(root.dir = "~/RProjects/SturgeonPopMetrics/")
+
+```
+
+## Primary Users
+
+We are the primary users. Over the last decade, a few entities have requested portions data but none request our data at regular intervals (e.g., annually). We supply (or should supply) annual estimates of harvest rate, survival rate, abundance (absolute & relative), and harvest. <!-- Alas, we have fallen short in our timeliness of calculating such metrics. -->
+
+Recent users have been University of Idaho who used our trammel net data (2014-2016) in a White Sturgeon population model. The model is available in publication (<HERE>), but we are still working on an interactive version to facilitate our understanding on how the model's input parameters affect output.
+
+<more here, other users?>
+
+## Customer (User) Needs
+
+<enhanced status review>
+
+
+

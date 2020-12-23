@@ -1,0 +1,317 @@
+---
+title: "White Sturgeon Harvest Rate Estimates"
+author: "CDFW"
+date: ''
+output:
+  pdf_document:
+    df_print: kable
+    fig_caption: yes
+    keep_tex: no
+    fig_height: 5
+    fig_width: 6
+  html_document:
+    fig_caption: yes
+    keep_md: no
+  html_notebook: default
+  md_document:
+    variant: markdown_github
+  github_document: default
+header-includes: \usepackage{float}
+geometry: margin=0.5in
+fontsize: 10pt
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, fig.pos = "H")
+
+knitr::opts_knit$set(root.dir = "~/RProjects/SturgeonPopMetrics/")
+
+```
+
+```{r libraries}
+
+library(ggplot2)
+library(reshape2)
+library(knitr)
+library(rmarkdown)
+
+```
+
+```{r data}
+
+AnglerTagReturn <- readRDS(file = "data/tagging/AnglerTagReturn.rds")
+
+SturgeonAll <- readRDS(file = "data/tagging/SturgeonAll.rds")
+
+SlotChanges <- read.csv(file = "data/SlotChanges.csv", header = TRUE)
+
+```
+
+```{r source-files}
+
+source(file = "source/source_stu_hr.R")
+source(file = "source/source_stu_mark-recap.R")
+source(file = "source/functions_global_general.R")
+source(file = "source/functions_global_record_count.R")
+source(file = "source/functions_global_data_subset.R")
+
+```
+
+```{r harvest-rate}
+
+wst_hr_list <- GetStuHrEst(LenCat %in% "leg", RelYear >= 1998, TagNum != "")
+
+estimate_years <- paste0(wst_hr_list$HR$Year, collapse = ", ")
+
+# below are other variables for use in plotting ********************************
+
+# melting data for scatter plots and barplots of HR.All vs HR.$ rates
+hr_melt <- reshape2::melt(
+  data = wst_hr_list$HR[, 1:6],
+  id.vars = c("Year", "HR.All")
+)
+
+# variables used in plotting (scatterplot)
+year_range <- range(hr_melt$Year)
+x_breaks <- seq(from = year_range[1], to = year_range[2], by = 2)
+strip_labs <- c(
+  HR.All = "Harvest rate",
+  HR.20 = "$20",
+  HR.50 = "$50",
+  HR.100 = "$100"
+)
+
+# for making point red color of the most current (& preliminary) estimate
+row_max_year <- which.max(wst_hr_list$HR$Year)
+mark_prelim_point <- c(rep("black", row_max_year - 1), "red")
+
+# for scaling x axis
+x_axis_scale <- scale_x_continuous(breaks = x_breaks, expand = c(0.02, 0))
+
+```
+
+##Introduction
+
+Simply, we calculate harvest rate as number angler tag returns (returns) divided by number of tags released (releases). However, we implement some constraints on both data streams.
+
+We typically are interested in estimates for a particular subset of the population (for example, legal sized fish). Thus, we would restrict release data to a specific size range (e.g., legal size when tagged). Likewise, with tag returns using only tag returns from fish within the specified size range.
+
+For returns, we've historically used only 'first-year' returns, or returns where date of capture was within 365 days of release (tag specific). This allows for calculating harvest rate within a single year and mitigates bias due to natural mortality.
+
+##Tag Releases (Marks)
+
+Below are number of tags released (since 1998) by reward value and total (`All`, Table 1). For this purpose, we count only fish legal-sized at time of tagging (Table 2). Ideally, we strive to release reward values in equal proportions, but when subsetting on a particular size range it's not always possible. Beginning in 1998, we released tags in $20, $50, and $100 denominations. In 2015, we changed demoniations to $50, $100, and $150. 
+
+```{r releases}
+
+# display number of tags released in tabular format
+
+kable(
+  wst_hr_list$Releases,
+  format = "pandoc",
+  caption = "Count of released tags per year"
+)
+
+# testing
+# write.csv(x = wst_hr_list$Releases, "analyses/HarvestRate/Releases.csv")
+
+```
+
+```{r returns, eval=FALSE}
+
+# display number of angler tag returns in tabular format
+
+kable(wst_hr_list$Returns, format = "pandoc")
+
+```
+
+```{r release-plot, eval=FALSE}
+
+# display plot of returns and releases
+
+
+ggplot() +
+  # geom_bar(
+  #   mapping = aes(x = Year, y = All),
+  #   data = wst_hr_list$Releases,
+  #   stat = "identity"
+  # ) +
+  geom_bar(
+    mapping = aes(x = Year, y = All),
+    data = wst_hr_list$Returns,
+    stat = "identity", fill = "red" , width = 0.5
+  )
+  
+
+```
+
+##Harvest Rate Estimates (annual)
+
+Below are harvest rate estimates (${\mu}$; Ricker 1975) for White Sturgeon for years `r estimate_years`. We estimate harvest rate using data from our mark-rapture (tagging) study ([here for more info](https://www.wildlife.ca.gov/Conservation/Delta/Sturgeon-Study)). Estimates herein consider White Sturgeon **legal-sized** at the time of tagging (Table 2).
+
+$\Large{\mu = \frac{R_1}{M}}$  
+
+where $R_1$ = angler tag returns within 1 year of tagging  
+      $M$ = number of White Sturgeon tagged (marked) within size range (in this case legal-size)
+
+Here we estimate harvest rates for each reward value separately and collectively (`All`). We provide 95% confidence limits ($CL_{0.95}$; Ricker 1975, Appendix II) for each annual estimate. ($CL_{0.95}$ potentially will be large given small `M`, for example see 2016.)
+
+$\Large{CL_{0.95}=\frac{R_1+1.92\pm1.960\sqrt{R_1 + 1.0}}{M}}$
+
+**Disclaimer**: analytics herein are subject to change pending future data and data QAQC. Contact jason.dubois@wildlife.ca.gov for more information.
+
+```{r table1}
+
+slot_table <- SlotChanges[, c(1:2, 4:6)]
+slot_table$MaxLen[is.infinite(slot_table$MaxLen)] <- NA
+slot_table$MaxYear[which.max(slot_table$MaxYear)] <- "present"
+# colnames(slot_table) <- c("From", "To", "Min (cm)", "Max (cm)", "Length Type")
+
+kable(
+  slot_table, format = "pandoc",
+  row.names = FALSE,
+  caption = "Period (years) of legal-sized (length) limits for White Sturgeon",
+  align = 'c',
+  col.names = c("From", "To", "Min (cm)", "Max (cm)", "Length Type")
+)
+
+# clean up
+rm(slot_table)
+
+```
+
+Annual harvest rate for White Sturgeon legal-sized at time of tagging. Numbers at right of point indicate number of tag returns used in calculation of harvest rate. Red dot indicates value may change with futher data (i.e., angler tag returns). Error bars indicate lower and upper $CL_{0.95}$.
+
+```{r HarvRatePlot, fig.width=8, fig.cap="Annual harvest rate for White Sturgeon legal-sized at time of tagging. Numbers at right of point indicate number of tag returns used in calculation of harvest rate.", fig.pos="H"}
+
+# using HR.All (the convential method)
+ggplot(data = wst_hr_list$HR, mapping = aes(x = Year, y = HR.All)) +
+  geom_errorbar(mapping = aes(ymin = LCL.All, ymax = UCL.All), width = 0.15) +
+  geom_point(shape = 21, fill = mark_prelim_point, colour = "white", size = 3) +
+  x_axis_scale + 
+  geom_text(
+    mapping = aes(x = Year, y = wst_hr_list$HR$HR.All, label = All),
+    data = wst_hr_list$Returns, nudge_x = 0.30
+  ) +
+  labs(y = "Harvest rate")
+
+```
+
+##Harvest Rate Estimates (annual by reward and all)
+
+Annual harvest rate for White Sturgeon legal-sized at time of tagging using all tag denominations and by each reward value. For ease of display, $CL_{0.95}$ not shown.
+
+```{r PlotByVal, fig.width=7, fig.cap="Annual harvest rate for White Sturgeon legal-sized at time of tagging using all tag denominations and by each reward value.", fig.pos="H"}
+
+# offset overlapping points
+pd <- position_dodge(width = 0.8)
+
+# works but need to work on colors; factor(as.numeric(variable)) needed to keep
+# order as 20, 50, 100, All
+ggplot() +
+  geom_bar(
+    mapping = aes(x = Year, y = HR.All, fill = "5"),
+    data = wst_hr_list$HR[, 1:2],
+    stat = "identity"
+  ) +
+  geom_bar(
+    mapping = aes(x = Year, y = value, fill = factor(as.numeric(variable))),
+    data = hr_melt,
+    position = pd,
+    stat = "identity",
+    alpha = 3/5
+  ) +
+  x_axis_scale +
+  scale_fill_manual(
+    "Type",
+    values = c(
+      '1' = "red", '2' = "green", '3' = "blue",
+      '4' = "orange", '5' = "black"
+    ),
+    labels = c(
+      '1' = "$20", '2' = "$50", '3' = "$100",
+      '4' = "$150", '5' = "All"
+    )
+  ) +
+  scale_y_continuous(expand = c(0.01, 0))
+
+```
+
+```{r table3}
+
+# tabular representation of annual harvest rates
+
+knitr::kable(
+  wst_hr_list$HR[, 1:6],
+  format = "pandoc",
+  caption = "Harvest rates "
+)
+
+```
+
+##Harvest Rate Comparisons
+
+Comparing harvest rate (`HR.All`) to harvest rate by dollar value ($20, $50, and $100). Note: not enough data yet to include $150 tags. Dashed line is slope = 1, intercept = 0.
+
+```{r hr-correlation}
+
+hr_melt <- subset(hr_melt, subset = variable != "HR.150")
+hr_melt$variable <- droplevels(hr_melt$variable)
+
+# set up dataframe of correlation coeff and p values
+cor_list <- sapply(X = split(hr_melt, hr_melt$variable), FUN = function(x) {
+  
+  # get correlation results
+  res <- cor.test(x$HR.All, x$value)
+  
+  # select only correlation and p-value for output
+  cor_est <- round(as.numeric(res["estimate"]), 2)
+  p_value <- round(as.numeric(res["p.value"]), 3)
+  
+  # variables for plotting cor and p-vale on plot
+  x_val <- min(hr_melt$HR.All, na.rm = TRUE)
+  y_val <- max(hr_melt$value, na.rm = TRUE)
+  
+  # function output
+  data.frame(cor_est, p_value, x_val, y_val, row.names = 1)
+  
+}, simplify = FALSE)
+
+cor_dat <- ListToDf(cor_list)
+colnames(cor_dat) <- c("Rate", "variable", "Cor", "Pval", "Xval", "Yval")
+cor_dat$variable <- factor(
+  paste(cor_dat$Rate, cor_dat$variable, sep = "."),
+  levels = c("HR.20", "HR.50", "HR.100")
+)
+
+```
+
+```{r ScatterMatrix, fig.asp=1.5, fig.cap="Scatterplot comparing harvest rate by value with harvest rate (all)", fig.pos="H"}
+
+# like this one better add r (corr coeff)
+ggplot(data = hr_melt, mapping = aes(x = HR.All, y = value)) +
+  geom_abline(intercept = 0, slope = 1, linetype = 2, alpha = 4/5) +
+  geom_point(size = 2, colour = "black", shape = 21, fill = "transparent") +
+  geom_text(
+    mapping = aes(
+      x = Xval,
+      y = Yval,
+      label = paste0("r = ", Cor, "\n", "p = ", Pval)
+    ),
+    family = "mono",
+    data = cor_dat, hjust= 0, vjust = 1
+  ) +
+  facet_grid(
+    facets = variable ~ .,
+    labeller = labeller(
+      variable = c(HR.20 = "$20", HR.50 = "$50", HR.100 = "$100")
+    )
+  ) +
+  labs(x = "Harvest rate", y = "Rate by value")
+
+```
+
+---
+ran report: `r Sys.time()`  
+CDFW - Sportfish Unit

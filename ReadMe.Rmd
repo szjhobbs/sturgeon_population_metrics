@@ -1,0 +1,664 @@
+---
+output: github_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_knit$set(root.dir = "~/RProjects/SturgeonPopMetrics/")
+knitr::opts_chunk$set(echo = FALSE)
+
+```
+
+```{r load-libraries}
+
+library(sportfish)
+# library(package)
+
+```
+
+```{r load-data, results='hide'}
+
+# the data directory for bay study
+data_dir <- "data/tagging"
+
+# list.files(path = data_dir, pattern = ".rds")
+Tagging <- new.env()
+
+ReadRDSFiles(fileDir = data_dir, envir = Tagging)
+
+notes <- readLines(file.path(data_dir, "data-log"), n = 2)
+notes <- paste0(notes[1], notes[2])
+
+# clean up
+rm(data_dir)
+
+```
+
+```{r variables}
+
+# to remove 1955 (1 day sampling) & rescue fish (from 2011 not caught in trammel
+# net operations)
+b_1955_rescue <- substitute(
+  RelYear != 1955 & !(TaggingLoc %in% c("FremontW", "TisdaleBP"))
+)
+
+# to get net fathom hours & soak time
+effort <- EffortStu(
+  data = Tagging[["Effort"]],
+  sStart = SetStart,
+  sEnd = SetEnd,
+  rStart = RetrieveStart,
+  rEnd = RetrieveEnd ,
+  netLength = Fathoms
+)
+
+```
+
+## Project Overview
+
+To display California-based White Sturgeon population metrics. Metrics herein may be used in status reports for said White Sturgeon. Further, to summarize --- and in some cases analyze --- Green Sturgeon data.
+
+## Sampling - Mark-Recapture
+
+```{r annual-date-range}
+
+with(data = Tagging[["Effort"]], expr = {
+  
+  dates <- as.Date(paste("2019", format(RelDate, format = "%m-%d"), sep = "-"))
+  
+  b <- dates > as.Date("2019-07-31")
+  
+  rngx <- range(RelYear[b])
+  rngy <- range(dates[b])
+  
+  # to plot x-axis tick labels every 5 years
+  xticks <- (rngx[1]:rngx[2]) %% 5 == 0
+  
+  plot(
+    x = rngx,
+    y = rngy,
+    type = "n",
+    xaxt = "n",
+    # yaxt = "n",
+    xlim = rngx + c(1.25, -1.25),
+    las = 1,
+    xlab = "Year",
+    ylab = "Sampling dates"
+  )
+  
+  # for custom x-axis ticks & tick labels
+  axis(
+    side = 1,
+    at = (rngx[1]:rngx[2])[xticks],
+    labels = (rngx[1]:rngx[2])[xticks],
+    col = "transparent",
+    col.ticks = "grey30"
+  )
+  
+  par(xaxp = c(rngx, diff(rngx)))
+  # par(yaxp = c(18109, 18230, 7))
+  grid(lwd = 1000, col = "grey90")
+  grid(lty = 1, col = "white", lwd = 1)
+  
+  # get min & max date by release year
+  bounds <- aggregate(
+    x = dates[b],
+    by = list(Year = RelYear[b]),
+    FUN = function(x) c(min(x), max(x))
+  )
+  
+  # for ease of plotting
+  bounds <- data.frame(
+    Year = bounds[["Year"]],
+    Min = as.Date(bounds[["x"]][, 1], origin = "1970-01-01"),
+    Max = as.Date(bounds[["x"]][, 2], origin = "1970-01-01")
+  )
+  
+  # all sampling dates (as small points)
+  points(
+    RelYear[b],
+    dates[b],
+    pch = 20,
+    # pch = ".",
+    cex = 0.01,
+    col = "grey60"
+  )
+  # beginning sampling date per year
+  points(
+    x = bounds[["Year"]],
+    y = bounds[["Min"]],
+    pch = 20,
+    col = "steelblue"
+  )
+  # ending sampling date per year
+  points(
+    x = bounds[["Year"]],
+    y = bounds[["Max"]],
+    pch = 20,
+    col = "orange2"
+  )
+  
+  legend(
+    x = rngx[2],
+    y = as.numeric(rngy[2]) * 1.001,
+    legend = c("start date", "end date"),
+    pch = 20,
+    col = c("steelblue", "orange2"),
+    xpd = TRUE,
+    xjust = 1,
+    ncol = 2,
+    bty = "n"
+  )
+
+  # output dates not plotted
+  # RelDate[!b]
+})
+
+```
+
+```{r split-effort}
+
+split_vars <- c("RelDate", "Vessel", "NetSet", "TaggingLoc")
+
+b <- eval(expr = b_1955_rescue, envir = Tagging[["Effort"]])
+
+split_effort_data <- split(
+  data.frame(
+    Tagging[["Effort"]][b, split_vars],
+    NetFH = effort[["Effort"]][b],
+    SoakTime = effort[["SoakTime"]][b],
+    TimeFished = effort[["TimeFished"]][b]
+  ),
+  f = Tagging[["Effort"]][b, "RelYear"]
+)
+
+# clean up
+rm(b)
+
+```
+
+```{r effort-summary}
+
+fn_out <- c(
+  "Year", "Days", "Vessels", "NetSets",
+  "Locations", "NetFH", "Hours", "MeanTF", "SdTF"
+)
+
+fn_out <- setNames(
+  object = rep(0, times = length(fn_out)),
+  nm = fn_out
+)
+
+effort_summary <- vapply(split_effort_data, FUN = function(x) {
+  
+  nfh <- sum(x[["NetFH"]], na.rm = TRUE)
+  if (all(nfh == 0)) nfh <- NA
+  
+  hours <- sum(x[["TimeFished"]], na.rm = TRUE)
+  if (all(hours == 0)) hours <- NA
+  
+  out <- c(
+    unique(as.numeric(format(x[["RelDate"]], format = "%Y"))),
+    length(unique(x[["RelDate"]])),
+    length(unique(x[["Vessel"]])),
+    length(x[["NetSet"]]),
+    length(unique(x[["TaggingLoc"]])),
+    nfh,
+    hours,
+    mean(x[["TimeFished"]], na.rm = TRUE) * 60,
+    sd(x[["TimeFished"]], na.rm = TRUE) * 60
+  )
+  
+  names(out) <- names(fn_out)
+  out
+  
+}, FUN.VALUE = fn_out)
+
+effort_summary <- data.frame(t(effort_summary), row.names = NULL)
+
+```
+
+```{r plot-effort, fig.height=6, fig.asp=1}
+
+# head(effort_summary)
+
+# for stacked plot
+mat_layout <- matrix(data = 1:3, nrow = 3, ncol = 1, byrow = TRUE)
+nf <- layout(mat = mat_layout)
+# layout.show(n = nf)
+
+# for keeping bottom & left spaces to display axes title
+# par(oma = c(4, 5, 1, 1), cex.axis = 1.5, family = "sans")
+par(oma = c(4, 4, 0.5, 1), cex.axis = 1.05)
+
+with(data = effort_summary, expr = {
+  
+  l <- list(Days = Days, NetSets = NetSets, NetFH = NetFH)
+  
+  rngy <- vapply(l, FUN = function(x) {
+    
+    x <- Filter(f = Negate(is.na), x)
+    
+    mn <- min(x)
+    mx <- max(x)
+    
+    c(Low = 0, Min = mn, Max = mx)
+    
+  }, FUN.VALUE = numeric(3L))
+  # end vapply
+  
+  rngx <- range(Year)
+  all_years <- rngx[1]:rngx[2]
+  xticks <- all_years %% 5 == 0
+  
+  lkp_vessel_col <- c(`1` = "steelblue", `2` = "orange2")
+  
+  n <- 1
+  
+  lapply(dimnames(rngy)[[2]], FUN = function(y) {
+    
+    mar3 <- 1.5
+    if (n > 1) mar3 <- 0.5
+    
+    n <<- n + 1
+    
+    # par(mar = c(0.1, 0.5, 0.5, 0.1), mgp = c(1, 0.6, 0))
+    par(mar = c(0, 0.5, mar3, 0.1), mgp = c(1, 0.6, 0))
+    # par(mar = c(0.1, 0.5, 1.0, 0.1), mgp = c(1, 0.6, 0))
+    
+    plot(
+      x = rngx,
+      y = rngy[c("Low", "Max"), y],
+      type = "n",
+      xlim = rngx + c(1.5, -1.5),
+      xlab = NA,
+      ylab = NA,
+      yaxt = "n",
+      xaxt = "n",
+      las = 1
+    )
+    
+    y_format <- AxisFormat(axTicks(side = 2))
+    
+    axis(
+      side = 2,
+      at = axTicks(side = 2),
+      labels = y_format[["Labels"]],
+      col = "transparent",
+      col.ticks = "grey30",
+      las = 1,
+      cex = 1.25
+    )
+    
+    txt <- y_format$AxisTitle(y)
+    
+    # txt <- if (max(axTicks(side = 2) < 100)) y
+    
+    mtext(text = txt, side = 2, line = 2)
+    
+    par(xaxp = c(rngx, diff(rngx)))
+    grid(lwd = 1000, col = "grey90")
+    grid(lty = 1, col = "white", lwd = 1)
+    
+    lines(
+      x = Year,
+      y = get(y),
+      type = "h",
+      col = lkp_vessel_col[Vessels],
+      lwd = 5,
+      lend = 1
+    )
+    
+  })
+  # end lapply
+  # layout(mat = 1)
+  
+  # print(axTicks(side = 1))
+  
+  axis(
+    side = 1,
+    at = all_years[xticks],
+    labels = all_years[xticks],
+    col = "transparent",
+    col.ticks = "grey30",
+    cex = 1.25
+  )
+  
+  mtext(text = "Year", side = 1, line = 2)
+  
+  # 
+  # plot(Year, Days, col = Vessels, type = "h")
+  # plot(Year, NetSets, col = Vessels, type = "h")
+  # plot(Year, NetFH, col = Vessels, type = "h")
+  # dimnames(rngy)
+  all_years[xticks]
+  axTicks(side = 1)
+  
+  
+  layout(mat = 1)
+  par(lend = 1)
+  
+  legend(
+    x = rngx[2],
+    y = 40000 * 1.1,
+    legend = c("One Vessel", "Two Vessels"),
+    col = c("steelblue", "orange2"),
+    lwd = 5,
+    border = NA,
+    # col = NA,
+    bty = "n",
+    ncol = 2,
+    xpd = TRUE,
+    xjust = 1,
+    yjust = 0.5,
+    x.intersp = 0.5,
+    seg.len = 2
+  )
+  
+})
+
+```
+
+<!--
+Here we show annual effort for years we performed mark-recapture fieldwork using trammel nets. Field names are explained below.
+
+- Year: sampling year
+- Days: number of calendar days fieldwork performed
+- Vessels: number of vessels used in fieldwork
+- NetSets: total number of net sets
+- Locations: number of locations sampled (large scale, e.g., Suisun Bay)
+- NetFH: net-fathom hours (unit of effort used to calculate CPUE)
+- Hours: total fishing time in hours
+- MeanTF: average annual fishing time (hours)
+- SdTF: standard deviation annual fishing time (hours)
+-->
+
+```{r effort-display, eval=FALSE}
+
+knitr::kable(effort_summary, format = "pandoc")
+
+```
+
+## Catch
+
+```{r catch}
+
+# aggregate(
+#   formula = NetSetId ~ RelYear + Species + StuType,
+#   data = Tagging[["Sturgeon"]],
+#   FUN = length,
+#   subset = eval(b_1955_rescue)
+# )
+
+catch <- with(data = Tagging[["Sturgeon"]], expr = {
+  # favoring aggregate.data.frame method rather than formula method for use of
+  # `drop` parameter - keeps years in order for when no GST were caught
+  
+  b <- eval(b_1955_rescue)
+  
+  out <- aggregate(
+    StuType[b],
+    by = list(Year = RelYear[b], Species = Species[b]),
+    FUN = function(x) {
+      c(Tagged = sum(x %in% "Tag"), Total = length(x))
+    },
+    drop = FALSE
+  )
+  
+  # for year (or years) with 0 catch (e.g., 2016 no GST)
+  out$x[is.na(out[["x"]])] <- 0
+  
+  data.frame(
+    Year = out[["Year"]],
+    Species = out[["Species"]],
+    out[["x"]],
+    stringsAsFactors = FALSE
+  )
+  
+})
+
+```
+
+Here we show by species (Green Strugeon and White Sturgeon) annual counts tagged and total caught (including recaptures from within season or previous seasons & for 2007 & 2019 includes PIT tags) during trammel net operations. In 2013, we stopped disc tagging Green Sturgeon. (Eventually, we'll summarize tagging separately by PIT & disc.)
+
+```{r plot-catch}
+
+# for stacked plot
+mat_layout <- matrix(data = 1:2, nrow = 2, ncol = 1, byrow = TRUE)
+nf <- layout(mat = mat_layout)
+# layout.show(n = nf)
+
+# for keeping bottom & left spaces to display axes title
+# par(oma = c(4, 5, 1, 1), cex.axis = 1.5, family = "sans")
+par(oma = c(3, 3, 0.5, 1), cex.axis = 1.05)
+
+with(data = catch, expr = {
+  
+  # to create empty plot
+  rngx <- range(Year)
+  # rngy <- range(Total)
+  
+  # for x-axis labels every 5 years
+  all_years <- rngx[1]:rngx[2]
+  xtick <- all_years %% 5 == 0
+  # print(xtick)
+  
+  # for plotting both gear species
+  vals <- lapply(list("Green", "White"), FUN = function(g) {
+    
+    par(mar = c(0.1, 0.5, 1.0, 0.1), mgp = c(1, 0.6, 0))
+    
+    # to get data specific to gear type
+    b <- Species %in% g & Total != 0
+    
+    # needed here due to the vast difference in catch by species
+    rngy <- range(Total[b])
+    
+    # to plot annual ticks every 5 years
+    # xtick <- all_years %% 5 == 0
+    
+    plot(
+      x = rngx,
+      y = c(min(0, rngy[1]), rngy[2]),
+      type = "n",
+      xaxt = "n",
+      las = 1,
+      yaxt = "n",
+      # xlab = "Year",
+      # ylab = sprintf(fmt = "Days sampled (%s)", g),
+      xlim = rngx + c(1, -1)
+    )
+    
+    # print(axTicks(side = 2))
+    y_format <- AxisFormat(axTicks(side = 2))
+
+    # custom y-axis tick display
+    axis(
+      side = 2,
+      at = axTicks(side = 2),
+      labels = y_format[["Labels"]],
+      # labels = axTicks(side = 2) / 1000,
+      col = "transparent",
+      col.ticks = "grey30",
+      cex = 1.05,
+      las = 1
+    )
+  
+    # for grey background & white gridlines
+    par(xaxp = c(rngx, diff(rngx)))
+    grid(lwd = 1000, col = "grey90")
+    grid(lty = 1, col = "white", lwd = 1)
+  
+    # plot total data as bar
+    lines(
+      # x = X1[b] - 0.2,
+      x = Year[b],
+      y = Total[b],
+      lend = 1,
+      lwd = 7,
+      # col = "orange2",
+      # col = rgb(0, 0, 0, 0.75),
+      col = "grey20",
+      type = "h"
+    )
+    
+    # plot tagged data as bar
+    lines(
+      # x = X1[b] - 0.2,
+      x = Year[b],
+      y = Tagged[b],
+      lend = 1,
+      lwd = 2,
+      # col = "orange2",
+      # col = rgb(0, 0, 0, 0.75),
+      col = "orange2",
+      type = "h"
+    )
+    
+    # for identifying which plot is which
+    mtext(
+      text = sprintf(fmt = "%s Sturgeon", g),
+      side = 3,
+      line = 0,
+      adj = 0
+    )
+    
+    # x-axis labeling (different for greens & whites)
+    mtext(text = y_format$AxisTitle("Count"), side = 2, line = 2)
+    
+    # output for convenience of custom x-axis
+    # xtick
+    # sum(b)
+    y_format
+  })
+  # end lapply()
+  
+  # resent to one plot
+  layout(mat = 1)
+  # print(vals)
+  
+  # custom x-axis
+  axis(
+    side = 1,
+    # at = RelYear[vals[[1]]],
+    # labels = RelYear[vals[[1]]],
+    at = all_years[xtick],
+    labels = all_years[xtick],
+    col = "transparent",
+    col.ticks = "grey30",
+    cex = 1.05
+  )
+  
+  # axis labels
+  mtext(text = "Year", side = 1, line = 1.75)
+  
+  par(lend = 1)
+  
+  legend(
+    x = rngx[2],
+    y = max(Total) * 1.08,
+    legend = c("Total", "Tagged"),
+    col = c("grey20", "orange2"),
+    lwd = c(10, 2),
+    border = NA,
+    # col = NA,
+    bty = "n",
+    ncol = 2,
+    xpd = TRUE,
+    xjust = 1,
+    yjust = 0,
+    x.intersp = 0.5,
+    seg.len = 2
+  )
+  
+})
+
+```
+
+```{r catch-display, eval=FALSE}
+
+knitr::kable(
+  reshape(
+    data = catch,
+    timevar = "Species",
+    idvar = "Year",
+    direction = "wide",
+    sep = " "
+  ),
+  format = "pandoc"
+)
+
+```
+
+## Tag Returns
+
+```{r eval=FALSE}
+
+
+with(data = Tagging[["TagReturns"]], expr = {
+  
+  recy <- as.numeric(format(DateCaptured2, format = "%Y"))
+  
+  table(RelYear, recy, useNA = "ifany")
+  
+  table(recy, useNA = "ifany")
+  
+  plot(RelYear, recy, type = "n")
+  
+  text(RelYear, recy, labels = try$RetYear)
+  
+  
+})
+
+try <- TagRetYear(
+  data = Tagging[["TagReturns"]],
+  dcap = DateCaptured2,
+  drel = RelDate
+)
+
+plot(Tagging$TagReturns$RelYear, try$DAL, col = rgb(0, 0, 0, 0.1), pch = 20)
+
+
+hist(try$RetYear)
+hist(try$DAL)
+
+```
+
+```{r eval=FALSE}
+
+# closer to what I was thinking
+
+with(data = Tagging, expr = {
+  
+  tRY <- TagRetYear(
+    data = TagReturns,
+    dcap = DateCaptured2,
+    drel = RelDate
+  )
+  
+  
+  tbl <- table(
+    tRY[["RetYear"]],
+    TagReturns[["RelYear"]],
+    useNA = "ifany",
+    dnn = c("Tagging Year", "Return Year")
+  )
+  
+  plot(x = tRY[["RetYear"]], y = TagReturns[["RelYear"]],
+       # col = hsv(alpha = tbl / max(tbl)))
+       col = heat.colors(n = 5, alpha = tbl / max(tbl)))
+  # text(x = tRY[["RetYear"]], y = TagReturns[["RelYear"]], labels = tbl)
+  
+  tbl / max(tbl)
+  
+})
+
+
+```
+
+
+
+---
+Contact [Jason DuBois](mailto:jason.dubois@wildlife.ca.gov)  
+CDFW, SportFish Unit  
+**Note**: `r notes`  

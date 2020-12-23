@@ -1,0 +1,1825 @@
+###Tagging Season Reports 
+###By Jason Dubois
+### 4/16/2020
+---
+
+---
+
+```{r setup, include=FALSE}
+###hobbs modified by using full directory address
+knitr::opts_knit$set(
+  root.dir = "U:/SportFish/Staff Files/JDuBois/0_RProjects/SturgeonPopMetrics/",
+  global.par = TRUE
+)
+
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE)
+
+now <- Sys.Date()
+
+```
+
+```{r global-par}
+
+par(
+  # bg = "white",
+  # fg = "black",
+  # col = "grey70",
+  # mar: c(bottom, left, top, right)
+  # mar = c(4, 4, 1, 1) + 0.1
+  # mar = c(5, 6, 1, 1),
+  # cex.axis = 1.5,
+  # cex.lab = 1.5,
+  col.axis = "grey40",
+  col.lab = "black",
+  # las = 1,
+  bty = "n",
+  mgp = c(3, 0.75, 0),
+  tcl = -0.3,
+  lend = 1
+)
+
+```
+
+```{r load-libraries}
+
+# sportfish currently available on GitHub
+library(sportfish)
+# library(XML) # for downloading CDEC data
+
+```
+
+```{r load-data, results='hide'}
+
+# the data directory
+data_dir <- "U:/SportFish/Staff Files/JDuBois/0_RProjects/SturgeonPopMetrics/data/tagging"
+
+Tagging <- new.env()
+ReadRDSFiles(fileDir = data_dir, envir = Tagging)
+
+# clean up
+rm(data_dir)
+
+```
+
+<!-- ## Analytic Chunks{.hide} -->
+
+<!-- begin analytic chunks -->
+
+```{r variables}
+
+# Here we create some variables we'll use throughout this process. We create
+# them here and now for convenience.
+
+# for current-year analytics
+year <- 2019
+
+
+# for analytics by week (if desired)
+Tagging[["Sturgeon"]] <- within(data = Tagging[["Sturgeon"]], expr = {
+  Week <- format(RelDate, format = "%U")
+})
+
+# environment for holding variables (values) used in narrative
+Narrative <- new.env()
+
+```
+
+```{r sturgeon}
+
+sturgeon <- Split(
+  data = Tagging[["Sturgeon"]],
+  subset = !(TaggingLoc %in% c("FremontW", "TisdaleBP")),
+  vars = c(RelDate, TaggingLoc, Species, TagNum, StuType, PitNum, LenCat),
+  splitVars = RelYear
+)
+
+sturgeon$RelYear <- as.numeric(sturgeon[["RelYear"]])
+
+```
+
+```{r sturgeon-summary}
+
+sturgeon$N <- vapply(sturgeon[["Data"]], FUN = nrow, FUN.VALUE = numeric(1L))
+
+sturgeon$SpecN <- t(vapply(sturgeon[["Data"]], FUN = function(x) {
+  s <- factor(
+    x[["Species"]],
+    levels = c("White", "Green"),
+    labels = c(White = 'W', Green = 'G')
+  )
+  table(s)
+}, FUN.VALUE = numeric(2L)))
+
+
+sturgeon$WSTLenCat <- t(vapply(sturgeon[["Data"]], FUN = function(x) {
+  b <- x[["Species"]] %in% "White"
+  lc <- factor(
+    x[b, "LenCat", drop = TRUE],
+    levels = c("sub", "leg", "ovr", "unk"),
+    exclude = "not"
+  )
+  table(lc)
+}, FUN.VALUE = numeric(4L)))
+
+sturgeon$RelPIT <- t(vapply(sturgeon[["Data"]], FUN = function(x) {
+  
+  pit <- x[["PitNum"]]
+  pit <- pit > 0 & !is.na(pit) & !(x[["StuType"]] %in% "Recap")
+  wst <- x[["Species"]] %in% "White"
+  
+  c(W = sum(pit & wst), G = sum(pit & !wst))
+  
+}, FUN.VALUE = numeric(2L)))
+
+sturgeon$NoTag <- t(vapply(sturgeon[["Data"]], FUN = function(x) {
+  
+  not <- x[["StuType"]] %in% "NoTag"
+  wst <- x[["Species"]] %in% "White"
+  
+  c(W = sum(not & wst), G = sum(not & !wst))
+  
+}, FUN.VALUE = numeric(2L)))
+
+sturgeon$RelDisc <- t(vapply(sturgeon[["Data"]], FUN = function(x) {
+  
+  disc <- x[["StuType"]] %in% "Tag" &
+    x[["TagNum"]] != ""
+  wst <- x[["Species"]] %in% "White"
+  
+  c(W = sum(disc & wst), G = sum(disc & !wst))
+  
+}, FUN.VALUE = numeric(2L)))
+
+sturgeon$DiscPit <- t(vapply(sturgeon[["Data"]], FUN = function(x) {
+  
+  dp <- x[["StuType"]] %in% "Tag" &
+    x[["TagNum"]] != "" &
+    x[["PitNum"]] > 0 &
+    !is.na(x[["PitNum"]])
+  wst <- x[["Species"]] %in% "White"
+  
+  c(W = sum(dp & wst), G = sum(dp & !wst))
+  
+}, FUN.VALUE = numeric(2L)))
+
+sturgeon$LocMonth <- lapply(sturgeon[["Data"]], FUN = function(x) {
+  
+  x$m <- as.numeric(format(x[["RelDate"]], format = "%m"))
+  # r <- table(x[c("m", "Species", "TaggingLoc")])
+  
+  r <- aggregate(
+    x["RelDate"],
+    by = x[c("TaggingLoc", "m", "Species")],
+    FUN = length,
+    drop = TRUE
+  )
+  
+  colnames(r) <- c("Location", "Month", "Species", "Count")
+  
+  r
+  
+})
+
+# vapply(sturgeon[["Data"]], FUN = function(x) {
+#   r <- table(x[["TaggingLoc"]])
+#   paste(names(r), " (", r, ")", sep = "", collapse = " | ")
+# }, FUN.VALUE = character(1L))
+
+```
+
+```{r season-catch-summary}
+
+season_catch_summary <- with(data = sturgeon, expr = {
+  
+  y <- as.character(year)
+  
+  rbind(
+    Count = SpecN[y, ],
+    TagsDisc = RelDisc[y, ],
+    TagsPIT = RelPIT[y, ],
+    DiscPit = DiscPit[y, ],
+    DiscOnly = RelDisc[y, ] - DiscPit[y, ],
+    PITOnly = RelPIT[y, ] - DiscPit[y, ],
+    NotTagged = NoTag[y, ]
+  )
+  
+})
+
+with(data = Narrative, expr = {
+  
+  total_catch <- sprintf(
+    fmt = "%.0f (%.0f WST, %.0f GST)",
+    sum(season_catch_summary["Count", ]),
+    season_catch_summary[["Count", "W"]],
+    season_catch_summary[["Count", "G"]]
+  )
+  
+  w_disc_pit <- season_catch_summary[["DiscPit", "W"]]
+  w_disc_only <- season_catch_summary[["DiscOnly", "W"]]
+  w_pit_only <- season_catch_summary[["PITOnly", "W"]]
+  w_no_tag <- season_catch_summary[["NotTagged", "W"]]
+  
+  g_pit_only <- season_catch_summary[["PITOnly", "G"]]
+  g_no_tag <- season_catch_summary[["NotTagged", "G"]]
+  
+})
+
+```
+
+```{r pit-tag}
+###hobbs- again probs ref where the data
+pit_tag <- with(data = Tagging[["Sturgeon"]], expr = {
+#pit_tag <- with(data = sturgeon, expr = {
+  b <- RelYear %in% year
+  
+  # frequency of pit tagged (TRUE) or not (FALSE) for species
+  table(
+    Species[b],
+    factor(
+      PitNum[b] > 0 & !is.na(PitNum[b]),
+      levels = c(TRUE, FALSE),
+      labels = c("Yes", "No")
+    ),
+    useNA = "ifany"
+  )
+})
+
+# to be used in narrative
+with(data = Narrative, expr = {
+  ptag_wst <- pit_tag[["White", "Yes"]]
+  ptag_gst <- pit_tag[["Green", "Yes"]]
+})
+
+# clean up
+rm(pit_tag)
+
+```
+
+```{r daily-effort}
+
+# chunk creates `daily` dataframe for cpue analytics within season by day
+# (average on daily net sets)
+
+daily <- Split(
+  data = Tagging[["Effort"]],
+  subset = RelYear %in% year,
+  vars = c(
+    Vessel, NetSet, SetStart, SetEnd,
+    RetrieveStart, RetrieveEnd, Fathoms
+  ),
+  splitVars = RelDate
+  # splitVars = c(RelDate, TaggingLoc, Vessel, NetSet)
+)
+
+# for proper class type
+daily$RelDate <- as.Date(daily[["RelDate"]])
+
+# to get (among other values) net-fathom hours (effort) per each net set
+daily$Summary <- lapply(daily[["Data"]], FUN = function(x) {
+  e <- EffortStu(
+    data = x,
+    sStart = SetStart,
+    sEnd = SetEnd,
+    rStart = RetrieveStart,
+    rEnd = RetrieveEnd,
+    netLength = Fathoms
+  )
+  
+  e$SetLevels <- paste0(x[["Vessel"]], x[["NetSet"]])
+  e$NumSets <- length(x[["NetSet"]])
+  e$NumVessels <- length(unique(x[["Vessel"]]))
+  
+  e
+})
+
+```
+
+```{r daily-effort-hours}
+
+# chunk adds `Hours` field to `daily` dataframe - may need to be tweaked a bit
+# for desired output
+
+daily$Hours <- t(vapply(daily[["Summary"]], FUN = function(x) {
+  
+  ds <- DescStat(x[["Effort"]])
+  
+  tot <- sum(x[["Effort"]])
+  
+  # ft <- sum(x[["TimeFished"]]) * 60
+  # st <- sum(x[["SoakTime"]]) * 60
+  
+  ft <- mean(x[["TimeFished"]]) * 60
+  st <- mean(x[["SoakTime"]]) * 60
+  
+  # ft <- sum(x[["TimeFished"]])
+  # st <- sum(x[["SoakTime"]])
+  
+  list(
+    NetSets = ds[["N"]],
+    NumVessels = x[["NumVessels"]],
+    TotNFH = tot,
+    NFHMean = ds[["Avg"]],
+    NFHVar = ds[["Var"]],
+    TotFT = sum(x[["TimeFished"]]),
+    FTMean = ft,
+    STMean = st
+  )
+  
+}, FUN.VALUE = as.list(1:8), USE.NAMES = TRUE))
+
+# for narrative
+with(data = Narrative, expr = {
+  net_sets <- Reduce(f = `+`, x = daily[["Hours"]][, "NetSets"])
+  nfh <- Reduce(f = `+`, x = daily[["Hours"]][, "TotNFH"])
+  nfh_text <- format(ceiling(nfh / 100) * 100, big.mark = ",")
+  fishing_time <- Reduce(f = `+`, x = daily[["Hours"]][, "TotFT"])
+  days_boat <- Reduce(f = `+`, x = daily[["Hours"]][, "NumVessels"])
+  days_calendar <- dim(daily[["Hours"]])[[1]]
+  avg_daily_net_set <- ceiling(net_sets / days_boat)
+})
+
+```
+
+```{r daily-catch}
+
+# chunk gets daily catch records & then adds catch field to `daily` dataframe
+# for convenience & further analytics; `daily_catch` & `index` variables no
+# longer needed after this chunk runs
+
+daily_catch <- Split(
+  data = Tagging[["Sturgeon"]],
+  subset = RelYear %in% year & Species %in% "White",
+  vars = c(Vessel, NetSet, StuType, InSlot, LenCat),
+  splitVars = RelDate
+  # splitVars = c(RelDate, TaggingLoc, Vessel, NetSet)
+)
+
+# for proper class type & matching below
+daily_catch$RelDate <- as.Date(daily_catch[["RelDate"]])
+
+# for matching all records in effort with catch records (i.e., we don't catch
+# sturgeon on every net set)
+index <- match(daily[["RelDate"]], table = daily_catch[["RelDate"]])
+
+daily$Catch <- daily_catch[index, "Data"]
+
+# clean up
+rm(daily_catch, index)
+
+```
+
+```{r daily-cpue}
+
+# to calculated CPUE for all, in current slot, & legal-size at tagging
+daily$CPUE <- Map(f = function(ee, cc) {
+  
+  n <- ee[["NumSets"]]
+  
+  # a placeholder for net sets with 0 cathc
+  catch <- matrix(
+    data = 0,
+    nrow = 3,
+    ncol = n,
+    dimnames = list(c("Tot", "Slot", "Leg"), 1:n)
+  )
+  
+  if (!is.null(cc)) {
+    
+    # to ensure when splitting every net set (even 0 catch) is included
+    ns <- factor(
+      paste0(cc[["Vessel"]], cc[["NetSet"]]),
+      levels = ee[["SetLevels"]]
+    )
+    
+    # to get cpue by net set on our way to getting daily average
+    r <- split(cc, f = ns, drop = FALSE)
+    
+    # to get catch for the 3 levels (in current years `Slot` & `Leg` likely to
+    # be the same)
+    catch <- vapply(r, FUN = function(d) {
+      c(
+        Tot = nrow(d),
+        Slot = sum(d[["InSlot"]], na.rm = TRUE),
+        Leg = sum(d[["LenCat"]] %in% "leg", na.rm = TRUE)
+      )
+    }, FUN.VALUE = numeric(3L))
+  }
+  
+  # effort is vector so need to transpose catch for proper calculation; 100 is a
+  # multiplier for convenience of working with values > 1
+  cpue <- 100 * (t(catch) / ee[["Effort"]])
+  
+  out <- list(
+    NetSets = n,
+    NumVessels = ee[["NumVessels"]],
+    TotalNFH = sum(ee[["Effort"]], na.rm = TRUE),
+    TotalCatch = rowSums(catch, na.rm = TRUE),
+    CPUE = cpue,
+    AvgCPUE = colMeans(cpue, na.rm = TRUE),
+    VarCPUE = apply(cpue, MARGIN = 2, FUN = var, na.rm = TRUE)
+  )
+  
+  out
+  
+}, ee = daily[["Summary"]], cc = daily[["Catch"]])
+
+```
+
+```{r daily-averages}
+
+daily_cpue <- vapply(daily[["CPUE"]], FUN = function(x) {
+  x[["AvgCPUE"]]
+}, FUN.VALUE = numeric(3L))
+
+daily_cpue_ds <- apply(daily_cpue, MARGIN = 1, FUN = function(x) {
+  r <- DescStat(x)
+  r$SE <- sqrt(r[["Var"]] / r[["N"]])
+  r
+})
+
+Narrative$cpue_leg <- sprintf(
+  fmt = "%.2f ± %.2f (SE)",
+  daily_cpue_ds[["Leg"]][["Avg"]],
+  daily_cpue_ds[["Leg"]][["SE"]]
+)
+
+Narrative$cpue_tot <- sprintf(
+  fmt = "%.2f ± %.2f (SE)",
+  daily_cpue_ds[["Tot"]][["Avg"]],
+  daily_cpue_ds[["Tot"]][["SE"]]
+)
+
+daily_cpue_max <- names(sort(daily_cpue["Tot", ], decreasing = TRUE)[1])
+
+Narrative$max_cpue <- with(data = daily[["CPUE"]][[daily_cpue_max]], expr = {
+  
+  sprintf(
+    fmt = "%.2f ± %.2f (SE)",
+    AvgCPUE[["Tot"]],
+    sqrt(VarCPUE[["Tot"]] / NetSets)
+  )
+  
+})
+
+Narrative$daily_cpue_max <- format(as.Date(daily_cpue_max), format = "%d-%b")
+
+```
+
+```{r monthly}
+
+monthly <- Map(f = function(x, y) {
+  
+  data.frame(
+    Month = as.numeric(format(as.Date(y), format = "%m")),
+    x[["CPUE"]],
+    row.names = NULL,
+    stringsAsFactors = FALSE
+  )
+  
+}, daily[["CPUE"]], names(daily[["CPUE"]]))
+
+monthly <- do.call(what = rbind, args = monthly)
+
+monthly_sum <- aggregate(
+  formula = cbind(Tot, Slot, Leg) ~ Month,
+  data = monthly,
+  FUN = DescStat
+)
+
+monthly_sum_avg_tot <- apply(monthly_sum, MARGIN = 1, FUN = function(x) {
+  
+  sprintf(
+    fmt = "%.2f (%s; n=%.0f)",
+    x[["Tot.Avg"]],
+    month.abb[x[["Month"]]],
+    x[["Tot.N"]]
+  )
+})
+
+Narrative$monthly_cpue <- paste0(monthly_sum_avg_tot, collapse = "; ")
+
+# clean up
+rm(monthly_sum_avg_tot, monthly_sum, monthly)
+
+```
+
+```{r annual-effort}
+
+# chunk creates `annual` dataframe to house annual effort & cpue for annual
+# timeseries comparison
+
+annual <- Split(
+  data = Tagging[["Effort"]],
+  subset = !(TaggingLoc %in% c("FremontW", "TisdaleBP")),
+  vars = c(
+    RelDate, Vessel, NetSet, SetStart, SetEnd,
+    RetrieveStart, RetrieveEnd, Fathoms
+  ),
+  splitVars = RelYear
+)
+
+# for proper class type
+annual$RelYear <- as.numeric(annual[["RelYear"]])
+
+# to get (among other values) net-fathom hours (effort) per each net set
+annual$Summary <- lapply(annual[["Data"]], FUN = function(x) {
+  e <- EffortStu(
+    data = x,
+    sStart = SetStart,
+    sEnd = SetEnd,
+    rStart = RetrieveStart,
+    rEnd = RetrieveEnd,
+    netLength = Fathoms
+  )
+  
+  e$SetLevels <- paste0(x[["RelDate"]], x[["Vessel"]], x[["NetSet"]])
+  e$NumSets <- length(x[["NetSet"]])
+  e$NumVessels <- length(unique(x[["Vessel"]]))
+  
+  e
+})
+
+```
+
+```{r annual-effort-hours}
+
+annual$Hours <- t(vapply(annual[["Summary"]], FUN = function(x) {
+  
+  ds <- DescStat(x[["Effort"]])
+  
+  tot <- sum(x[["Effort"]], na.rm = TRUE)
+  
+  # ft <- sum(x[["TimeFished"]]) * 60
+  # st <- sum(x[["SoakTime"]]) * 60
+  
+  # ft <- mean(x[["TimeFished"]], na.rm = TRUE) * 60
+  # st <- mean(x[["SoakTime"]], na.rm = TRUE) * 60
+  
+  ft <- DescStat(x[["TimeFished"]] * 60)
+  
+  # ft <- sum(x[["TimeFished"]])
+  # st <- sum(x[["SoakTime"]])
+  
+  list(
+    NetSets = ds[["N"]],
+    NumVessels = x[["NumVessels"]],
+    TotNFH = tot,
+    NFHMean = ds[["Avg"]],
+    NFHVar = ds[["Var"]],
+    FTMean = ft[["Avg"]],
+    FTStDev = sqrt(ft[["Var"]])
+  )
+  
+}, FUN.VALUE = as.list(1:7), USE.NAMES = TRUE))
+
+# for annual values within narrative
+with(data = Narrative, expr = {
+  
+  d <- annual[["Hours"]]
+  y <- as.character(year)
+  
+  num_vessels <- c(`1` = "one", `2` = "two")[d[[y, "NumVessels"]]]
+  # ft_mean <- d[[y, "FTMean"]]
+  # ft_sd <- d[[y, "FTStDev"]]
+  ft_msg <- sprintf(
+    fmt = "%.0f ± %.1f (SD) minutes",
+    d[[y, "FTMean"]], d[[y, "FTStDev"]]
+  )
+  
+  # clean up (not needed)
+  rm(d, y)
+})
+
+```
+
+```{r annual-catch}
+
+# chunk gets daily catch records & then adds catch field to `daily` dataframe
+# for convenience & further analytics; `daily_catch` & `index` variables no
+# longer needed after this chunk runs
+
+annual_catch <- Split(
+  data = Tagging[["Sturgeon"]],
+  # subset = RelYear %in% year & Species %in% "White",
+  subset = Species %in% "White" & !(TaggingLoc %in% c("FremontW", "TisdaleBP")),
+  vars = c(RelDate, Vessel, NetSet, StuType, InSlot, LenCat),
+  splitVars = RelYear
+)
+
+# for proper class type & matching below
+annual_catch$RelYear <- as.numeric(annual_catch[["RelYear"]])
+
+# for matching all records in effort with catch records (i.e., we don't catch
+# sturgeon on every net set)
+index <- match(annual[["RelYear"]], table = annual_catch[["RelYear"]])
+
+annual$Catch <- annual_catch[index, "Data"]
+
+# clean up
+rm(annual_catch, index)
+
+```
+
+```{r annual-cpue}
+
+# to calculated CPUE for all, in current slot, & legal-size at tagging
+annual$CPUE <- Map(f = function(ee, cc) {
+  
+  n <- ee[["NumSets"]]
+  
+  # a placeholder for net sets with 0 cathc
+  catch <- matrix(
+    data = 0,
+    nrow = 3,
+    ncol = n,
+    dimnames = list(c("Tot", "Slot", "Leg"), 1:n)
+  )
+  
+  if (!is.null(cc)) {
+    
+    # print(paste0(cc[["Vessel"]], cc[["NetSet"]]))
+    
+    # to ensure when splitting every net set (even 0 catch) is included
+    ns <- factor(
+      paste0(cc[["RelDate"]], cc[["Vessel"]], cc[["NetSet"]]),
+      levels = ee[["SetLevels"]]
+    )
+    
+    # to get cpue by net set on our way to getting daily average
+    r <- split(cc, f = ns, drop = FALSE)
+    
+    # return(r)
+    
+    # to get catch for the 3 levels (in current years `Slot` & `Leg` likely to
+    # be the same)
+    catch <- vapply(r, FUN = function(d) {
+      c(
+        Tot = nrow(d),
+        Slot = sum(d[["InSlot"]], na.rm = TRUE),
+        Leg = sum(d[["LenCat"]] %in% "leg", na.rm = TRUE)
+      )
+    }, FUN.VALUE = numeric(3L))
+  }
+  
+  # effort is vector so need to transpose catch for proper calculation; 100 is a
+  # multiplier for convenience of working with values > 1
+  cpue <- 100 * (t(catch) / ee[["Effort"]])
+  
+  out <- list(
+    NetSets = n,
+    NumVessels = ee[["NumVessels"]],
+    TotalNFH = sum(ee[["Effort"]], na.rm = TRUE),
+    TotalCatch = rowSums(catch, na.rm = TRUE),
+    CPUE = cpue,
+    AvgCPUE = colMeans(cpue, na.rm = TRUE),
+    VarCPUE = apply(cpue, MARGIN = 2, FUN = var, na.rm = TRUE)
+  )
+  
+  out
+  
+}, ee = annual[["Summary"]], cc = annual[["Catch"]])
+
+```
+
+```{r annual-narrative}
+
+cpue_current <- annual[["CPUE"]][[as.character(year)]][["AvgCPUE"]][["Slot"]]
+cpue_var_cur <- annual[["CPUE"]][[as.character(year)]][["VarCPUE"]][["Slot"]]
+cpue_n_cur <- annual[["CPUE"]][[as.character(year)]][["NetSets"]]
+
+cpue_se_cur <- sqrt(cpue_var_cur / cpue_n_cur)
+
+# 1.30 ± 0.13 (SE)
+
+Narrative$cpue_annual_current <- sprintf(
+  fmt = "%.2f ± %.2f (SE)",
+  cpue_current,
+  cpue_se_cur
+)
+
+# period mean
+# period median
+
+annual_cpue <- vapply(annual[["CPUE"]], FUN = function(x) {
+  x[["AvgCPUE"]][["Slot"]]
+}, FUN.VALUE = numeric(1L), USE.NAMES = FALSE)
+
+cpue_annual_avg <- mean(annual_cpue, na.rm = TRUE)
+cpue_annual_med <- median(annual_cpue, na.rm = TRUE)
+
+Narrative$cpue_annual_avg <- round(cpue_annual_avg, digits = 1)
+
+# clean up
+rm(cpue_current, cpue_var_cur, cpue_n_cur, cpue_se_cur, annual_cpue)
+
+```
+
+```{r annual-zero-cpue}
+
+annual$CPUEZeroCount <- t(vapply(annual[["CPUE"]], FUN = function(x) {
+  apply(x[["CPUE"]], MARGIN = 2, FUN = function(y) mean(y == 0))
+}, FUN.VALUE = numeric(3L)))
+
+```
+
+```{r bycatch}
+
+# chunk creates `bycatch` dataframe with summary output
+
+index <- match(
+  Tagging[["Bycatch"]][["NetSetId"]],
+  table = Tagging[["Effort"]][["NetSetId"]]
+)
+
+Tagging$Bycatch$RelYear <- Tagging[["Effort"]][index, "RelYear"]
+
+bycatch <- Split(
+  data = Tagging[["Bycatch"]],
+  # vars = c(
+  #   Vessel, NetSet, SetStart, SetEnd,
+  #   RetrieveStart, RetrieveEnd, Fathoms
+  # ),
+  splitVars = RelYear
+)
+
+
+bycatch$Summary <- lapply(bycatch[["Data"]], FUN = function(d) {
+  
+  count <- aggregate(formula = Count ~ Species, data = d, FUN = sum)
+  
+  # aggregate(formula = FL ~ Species, data = d, FUN = DescStat)
+  
+  l <- d[["FL"]]
+  l[is.na(l)] <- d[is.na(l), "TL"]
+  
+  d$Sex[is.na(d[["Sex"]])] <- "unk"
+  
+  len <- aggregate(l, by = d[c("Species", "Sex")], FUN = DescStat)
+  
+  len <- data.frame(
+    Species = len[["Species"]],
+    Sex = len[["Sex"]],
+    len[["x"]],
+    stringsAsFactors = FALSE
+  )
+  
+  b <- d[["Species"]] %in% "Chinook Salmon"
+  
+  sal <- table(d[b, c("Condition", "Coloration", "AdFin")], useNA = "ifany")
+  
+  ad_fin <- sum(d[b, "AdFin"])
+  
+  list(
+    Count = count,
+    LengthStats = len,
+    Chinook = sal,
+    ChinookAdfin = c(AdFin = ad_fin, NoAdFin = sum(b) - ad_fin)
+  )
+})
+
+# clean up
+rm(index)
+
+```
+
+```{r tag-sequence}
+
+tag_seq <- with(data = Tagging[["Sturgeon"]], expr = {
+  
+  b <- RelYear %in% year & TagNum != "" & StuType %in% "Tag"
+  
+  l <- split(
+    Tagging[["Sturgeon"]][b, c("TagNum", "TagVal")],
+    f = TagVal[b]
+  )
+
+  lapply(l, FUN = TagSequence, tags = TagNum)
+})
+
+```
+
+```{r annual-lf}
+
+annual_lf <- Split(
+  data = Tagging[["Sturgeon"]],
+  subset = RelYear >= (year - 5) & Species %in% "White",
+  vars = FL,
+  splitVars = RelYear
+)
+
+annual_lf$RangeFL <- t(
+  vapply(
+    annual_lf[["Data"]],
+    FUN = range,
+    FUN.VALUE = numeric(2L),
+    na.rm = TRUE
+  )
+)
+
+```
+
+```{r annual-lf-freq}
+
+annual_lf$Freq <- lapply(annual_lf[["Data"]], FUN = function(x, ...) {
+  Frequency(x[["FL"]], ...)
+}, binWidth = 5, xRange = range(annual_lf[["RangeFL"]]))
+
+annual_lf$MaxLfDens <- vapply(annual_lf[["Freq"]], FUN = function(lf) {
+  max(lf[["density"]])
+}, FUN.VALUE = numeric(1L))
+
+```
+
+```{r pinnipeds}
+
+# chunk creates `pinnipeds` dataframe for annual analytics
+
+index <- match(
+  Tagging[["Pinnipeds"]][["NetSetId"]],
+  table = Tagging[["Effort"]][["NetSetId"]]
+)
+
+Tagging$Pinnipeds <- within(data = Tagging[["Pinnipeds"]], expr = {
+  RelYear <- Tagging[["Effort"]][index, "RelYear"]
+  TaggingLoc <- Tagging[["Effort"]][index, "TaggingLoc"]
+})
+
+pinnipeds <- Split(
+  data = Tagging[["Pinnipeds"]],
+  splitVars = RelYear
+)
+
+pinnipeds$Summary <- lapply(pinnipeds[["Data"]], function(d) {
+  
+  d <- split(d, f = d["TaggingLoc"])
+  
+  lapply(d, FUN = function(dd) {
+    
+    seals <- DescStat(dd[["NumSeals"]])
+    slion <- DescStat(dd[["NumSeaLions"]])
+    
+    n_seal <- sum(dd[["NumSeals"]], na.rm = TRUE)
+    n_lion <- sum(dd[["NumSeaLions"]], na.rm = TRUE)
+    
+    raid_seal <- dd[["SealsRaiding"]] %in% "Yes"
+    raid_lion <- dd[["SeaLionsRaiding"]] %in% "Yes"
+    
+    out <- list(
+      Count = c(
+        Seals = n_seal,
+        SeaLions = n_lion
+      ),
+      AvgPerSet = c(
+        Seals = seals[["Avg"]],
+        SeaLion = slion[["Avg"]]
+      ),
+      SDPerSet = c(
+        Seals = sqrt(seals[["Var"]]),
+        SeaLion = sqrt(slion[["Var"]])
+      ),
+      FracRaiding = c(
+        Seals = mean(raid_seal),
+        SeaLion = mean(raid_lion)
+      )
+    )
+    # end output list
+    
+    # for neater output
+    do.call(what = rbind, args = out)
+  })
+  # end nested lapply
+})
+# end outer lapply
+
+# clean up
+rm(index)
+
+```
+
+```{r muscle-plug}
+
+# head(Tagging$Sturgeon)
+
+muscle_plug <- with(data = Tagging[["Sturgeon"]], expr = {
+  b <- RelYear %in% year &
+    grepl(pattern = "MP-", x = Notes)
+  
+  list(
+    MPNotes = Notes[b],
+    MP = sum(b),
+    Species = table(Species[b]),
+    RangeFL = range(FL[b]),
+    LenFreq = Frequency(FL[b], binWidth = 5)
+  )
+})
+
+Narrative$muscle_plug <- sprintf(
+  fmt = "muslce plugs from %s %s Sturgeon with fork lengths %s cm",
+  muscle_plug[["MP"]],
+  names(muscle_plug[["Species"]]),
+  paste0(muscle_plug[["RangeFL"]], collapse = "-")
+)
+
+# for possible testing of count
+# strsplit(x = muscle_plug$MPNotes, split = "[[:digit:]]{2}")
+# test <- gregexpr(pattern = "[[:digit:]]{2}", text = muscle_plug$MPNotes)
+# 
+# 
+# Map(f = function(x, y) {
+#   
+#   substr(x = x, start = y[1], stop = attr(y, which = "match.length") + y[1])
+#   # attr(y, which = "match.length")
+#   
+#   
+# }, muscle_plug$MPNotes, test)
+
+```
+
+```{r map, eval=FALSE}
+
+Tagging$Coordinates$NetSetId
+Tagging$Effort$NetSetId
+
+ns_id <- with(Tagging[["Effort"]], expr = {
+  b <- RelYear %in% year #& TaggingLoc %in% "Suisun"
+  NetSetId[b]
+})
+
+i <- match(ns_id, Tagging[["Coordinates"]][["NetSetId"]])
+
+
+plot(
+  Tagging$Coordinates[i, "LonSS"],
+  Tagging$Coordinates[i, "LatSS"]#,
+  # xlim = c(-122.07, -122.03),
+  # ylim = c(38.08, 38.12),
+)
+
+```
+
+<!-- end of analytic chunks -->
+
+## Introduction
+
+<!-- ## Methods and Gear -->
+
+## Field Season Summary
+
+We set the net `r Narrative[["net_sets"]]` times over `r Narrative[["days_calendar"]]` calendar days producing `r Narrative[["fishing_time"]]` hours fishing time (~`r Narrative[["nfh_text"]]` net-fathom hours). Average fishing time per set was about `r Narrative[["ft_msg"]]`. Nets were set an average of `r Narrative[["avg_daily_net_set"]]` times per day per research vessel (`r Narrative[["num_vessels"]]` vessel[s] used this season).
+
+We caught `r Narrative[["total_catch"]]` sturgeon this season. Of the White Sturgeon, `r Narrative[["w_disc_pit"]]` were then PIT & disc tagged, `r Narrative[["w_disc_only"]]` disc tagged only, and `r Narrative[["w_pit_only"]]` PIT tagged only. Of the Green Sturgeon, `r Narrative[["g_pit_only"]]` were then PIT tagged. Of the sturgeon catch, `r Narrative[["w_no_tag"]]` White Sturgeon and `r Narrative[["g_no_tag"]]` Green Sturgeon received no tag. We recorded no recaptures this season.
+
+#### Green Sturgeon
+
+#### PIT Tagging
+
+## Sampling Effort and Catch-per-unit-effort (CPUE)
+
+<!-- narrative here -->
+
+#### Daily (Current Field Season)
+
+Average daily CPUE for legal-sized (102-152 cm FL) White Sturgeon was `r Narrative[["cpue_leg"]]` and for all sizes of White Sturgeon was `r Narrative[["cpue_tot"]]`. Average daily CPUE per drift (net set) for all sizes of White Sturgeon was greatest on `r Narrative[["daily_cpue_max"]]` (`r Narrative[["max_cpue"]]`; Figure below).
+
+```{r plot-daily-cpue, fig.width=8, fig.height=6}
+
+# TODO:
+# (1) stack net set & cpue plots
+# (2) custom function for plotting or maybe loop through to make empty plots
+# (3) decide on output for saved table (cpue, netsets, etc.)
+
+# for stacked plot
+mat_layout <- matrix(data = 1:2, nrow = 2, ncol = 1, byrow = TRUE)
+nf <- layout(mat = mat_layout)
+# layout.show(n = nf)
+
+# for keeping bottom & left spaces to display axes title
+# par(oma = c(4, 5, 1, 1), cex.axis = 1.5, family = "sans")
+par(
+  oma = c(3, 1, 1.25, 1),
+  # cex.axis = 1.05,
+  # cex.axis = 1.5,
+  cex.axis = 1.0,
+  cex.lab = 1.5,
+  tcl = -0.3
+)
+
+plt <- with(data = daily, expr = {
+  
+  par(mar = c(0.1, 2.0, 0.5, 0.1), mgp = c(2.5, 0.6, 0))
+  
+  avg <- vapply(CPUE, FUN = function(x) {
+    se <- sqrt(x[["VarCPUE"]] / x[["NetSets"]])
+    c(Avg = x[["AvgCPUE"]], SE = se)
+  }, FUN.VALUE = numeric(6L))
+  
+  sets <- vapply(Summary, FUN = function(x) {
+    c(Sets = x[["NumSets"]], Vessels = x[["NumVessels"]])
+  }, FUN.VALUE = numeric(2L))
+  
+  lkp_col_vessels <- c(`1` = "grey40", `2` = "steelblue")
+  
+  b <- grepl(pattern = "tot", x = dimnames(avg)[[1]], ignore.case = TRUE)
+  
+  ebars <- apply(avg[b, ], MARGIN = 2, FUN = function(x) {
+    c(x[1] - x[2], sum(x))
+  })
+  
+  yrng1 <- c(0, max(sets["Sets", ]))
+  yrng2 <- range(ebars)
+  xrng <- range(RelDate)
+  
+  plot(
+    x = xrng,
+    # y = yrng1,
+    y = c(0, Reduce(f = max, x = Hours[, "TotNFH"])),
+    type = "n",
+    xaxt = "n",
+    yaxt = "n",
+    xlim = xrng + c(2, -2),
+    xlab = NA,
+    ylab = NA
+  )
+  
+  # for custom grid lines and background
+  par(xaxp = c(xrng, diff(xrng)))
+  grid(lwd = 1000, col = "grey90")
+  grid(lty = 1, col = "white", lwd = 1)
+  
+  net_sets <- unique(sets["Sets", ])
+  
+  clrs <- setNames(
+    # object = topo.colors(n = 4, alpha = 1),
+    # object = hcl.colors(n = 4, palette = "Dark 2", alpha = 1),
+    # object = hcl.colors(n = 4, palette = "Earth", alpha = 1),
+    # object = hcl.colors(n = 4, palette = "Fall", alpha = 1),
+    object = grey.colors(n = length(net_sets), start = 0.1, end = 0.6),
+    nm = sort(net_sets)
+  )
+  
+  # hcl.pals("qualitative")
+  
+  # print(clrs)
+  
+  lines(
+    x = RelDate,
+    # y = sets["Sets", ],
+    y = Hours[, "TotNFH"],
+    type = "h",
+    # col = lkp_col_vessels[sets["Vessels", ]],
+    # col = sets["Sets", ],
+    col = clrs[as.character(sets["Sets", ])],
+    # col = grey(level = (10 / sets["Sets", ]) %% 1, alpha = 1),
+    # col = rgb(
+    #   red = sets["Sets", ] / 10,
+    #   green = sets["Sets", ] / 100,
+    #   blue = 0,
+    #   alpha = 0.8
+    # ),
+    lend = 1,
+    lwd = 3
+  )
+  
+  y_format <- AxisFormat(axTicks(side = 2))
+  
+  axis(
+    side = 2,
+    at = axTicks(side = 2),
+    labels = y_format[["Labels"]],
+    col = "transparent",
+    col.ticks = "grey30",
+    las = 1,
+    hadj = 0.75
+  )
+  
+  mtext(
+    text = y_format$AxisTitle(var = "Net-fathom hour"),
+    side = 2,
+    line = 1.5
+  )
+  
+  plot(
+    x = xrng,
+    y = yrng2,
+    type = "n",
+    xaxt = "n",
+    yaxt = "n",
+    xlim = xrng + c(2, -2),
+    xlab = NA,
+    ylab = NA
+  )
+  
+  # for custom grid lines and background
+  par(xaxp = c(xrng, diff(xrng)))
+  grid(lwd = 1000, col = "grey90")
+  grid(lty = 1, col = "white", lwd = 1)
+  
+  segments(
+    x0 = RelDate,
+    y0 = ebars[1, ],
+    y1 = ebars[2, ],
+    lend = 1,
+    lwd = 1.75,
+    col = "grey20"
+  )
+  
+  points(
+    x = RelDate,
+    y = avg[b, ][1, ],
+    pch = 20,
+    cex = 0.75,
+    col = "black"
+  )
+  
+  dts <- seq(from = xrng[1], to = xrng[2], by = "week")
+  
+  # axis(
+  #   side = 1,
+  #   at = dts,
+  #   labels = format(dts, format = "%b\n%d"),
+  #   col = "transparent",
+  #   col.ticks = "grey30",
+  #   padj = 0.4
+  # )
+  
+  axis(
+    side = 1,
+    at = dts,
+    labels = format(dts, format = "%d"),
+    col = "transparent",
+    col.ticks = "grey30",
+    padj = -0.5
+  )
+  
+  axis(
+    side = 1,
+    at = dts[!duplicated(format(dts, format = "%m"))],
+    labels = format(dts, format = "%b")[!duplicated(format(dts, format = "%m"))],
+    col = "transparent",
+    col.ticks = "grey30",
+    padj = 0.5
+  )
+  
+  axis(
+    side = 2,
+    at = axTicks(side = 2),
+    labels = axTicks(side = 2),
+    col = "transparent",
+    col.ticks = "grey30",
+    las = 1,
+    hadj = 0.75
+  )
+  
+  mtext(text = "Catch per 100 net-fathom hour", side = 2, line = 1.5)
+  
+  
+  list(X = xrng, CLRS = clrs)
+  
+  # sets
+})
+
+nf <- layout(mat = 1)
+
+par(oma = c(0,0,0.5,0))
+  
+  legend(
+    x = plt[["X"]][2],
+    y = 11,
+    legend = names(plt[["CLRS"]]),
+    fill = plt[["CLRS"]],
+    border = NA,
+    bty = "n",
+    xpd = TRUE,
+    xjust = 1,
+    ncol = 4#,
+    # title = "Net sets: ",
+    # title.adj = 0
+  )
+  
+  mtext(text = "Net sets:", side = 3, line = -0.5, adj = 0.68)
+
+```
+
+#### Annual (All Field Seasons)
+
+Average monthly CPUE for all sizes of White Sturgeon declined during our field season: `r Narrative$monthly_cpue` . Catch per 100 net-fathom hour of White Sturgeon within the current slot limit (102-152 cm FL) was `r Narrative$cpue_annual_current`, a value below the historical (period) average of `r Narrative$cpue_annual_avg`, but comparable to the prior sampling year (2017).
+
+```{r plot-annual-cpue, fig.width=8, fig.height=6}
+
+# TODO: see daily cpue list
+
+# for stacked plot
+mat_layout <- matrix(data = 1:2, nrow = 2, ncol = 1, byrow = TRUE)
+nf <- layout(mat = mat_layout)
+# layout.show(n = nf)
+
+# for keeping bottom & left spaces to display axes title
+# par(oma = c(4, 5, 1, 1), cex.axis = 1.5, family = "sans")
+par(
+  oma = c(3, 1, 1.25, 1),
+  # cex.axis = 1.05,
+  # cex.axis = 1.5,
+  cex.axis = 1.0,
+  cex.lab = 1.5,
+  tcl = -0.3
+)
+
+b <- annual[["RelYear"]] > 1967
+# b <- annual[["RelYear"]] > 2000
+
+plt_annual <- with(data = annual[b, ], expr = {
+  par(mar = c(0.1, 2.0, 0.5, 0.1), mgp = c(2.5, 0.6, 0))
+  
+  avg <- vapply(CPUE, FUN = function(x) {
+    se <- sqrt(x[["VarCPUE"]] / x[["NetSets"]])
+    c(Avg = x[["AvgCPUE"]], SE = se)
+  }, FUN.VALUE = numeric(6L))
+  
+  sets <- vapply(Summary, FUN = function(x) {
+    c(Sets = x[["NumSets"]], Vessels = x[["NumVessels"]])
+  }, FUN.VALUE = numeric(2L))
+  
+  bxplt <- lapply(CPUE, FUN = function(x) {
+    boxplot(x[["CPUE"]][, "Slot"], plot = FALSE)
+  })
+  
+  lkp_col_vessels <- c(`1` = "grey20", `2` = "steelblue4")
+  
+  b <- grepl(pattern = "slot", x = dimnames(avg)[[1]], ignore.case = TRUE)
+  
+  # ebars <- apply(avg[b, ], MARGIN = 2, FUN = function(x) {
+  #   c(x[1] - x[2], sum(x))
+  # })
+  
+  ebars <- vapply(bxplt, FUN = function(x) {
+    c(min(x[["stats"]]), max(x[["out"]], x[["stats"]]))
+  }, FUN.VALUE = numeric(2L))
+  
+  yrng1 <- c(0, max(sets["Sets", ]))
+  yrng2 <- range(ebars)
+  xrng <- range(RelYear)
+  
+  plot(
+    x = xrng,
+    y = yrng1,
+    type = "n",
+    xlim = xrng + c(1, -1),
+    xaxt = "n",
+    yaxt = "n",
+    las = 1
+  )
+  
+  p1 <- axTicks(side = 2)
+  
+  p1form <- AxisFormat(p1)
+  
+  axis(
+    side = 2,
+    at = p1,
+    labels = p1form[["Labels"]],
+    hadj = 0.75,
+    col = "transparent",
+    col.ticks = "grey30",
+    las = 1
+  )
+  
+  mtext(text = p1form$AxisTitle(var = "Net sets"), side = 2, line = 1.5)
+  # 
+
+  # for custom grid lines and background
+  par(xaxp = c(xrng, diff(xrng)))
+  grid(lwd = 1000, col = "grey90")
+  grid(lty = 1, col = "white", lwd = 1)
+
+  lines(
+    x = RelYear,
+    y = sets["Sets", ],
+    type = "h",
+    col = lkp_col_vessels[sets["Vessels", ]],
+    lend = 1,
+    lwd = 5
+  )
+
+  plot(
+    x = xrng,
+    y = yrng2,
+    type = "n",
+    xlim = xrng + c(1, -1),
+    xaxt = "n",
+    yaxt = "n",
+    las = 1
+  )
+  
+  p2 <- axTicks(side = 2)
+  
+  p1form <- AxisFormat(p2)
+  
+  axis(
+    side = 2,
+    at = p2,
+    # labels = p1form[["Labels"]],
+    labels = p2,
+    hadj = 0.75,
+    col = "transparent",
+    col.ticks = "grey30",
+    las = 1
+  )
+  
+  rely <- xrng[1]:xrng[2]
+  
+  axis(
+    side = 1,
+    at = rely[rely %% 5 == 0],
+    labels = rely[rely %% 5 == 0],
+    padj = -0.5,
+    col = "transparent",
+    col.ticks = "grey30",
+    las = 1
+  )
+  
+  mtext(text = "Catch per 100 net-fathom hour", side = 2, line = 1.5)
+  mtext(text = "Year", side = 1, line = 1.5)
+  
+  # for custom grid lines and background
+  par(xaxp = c(xrng, diff(xrng)))
+  grid(lwd = 1000, col = "grey90")
+  grid(lty = 1, col = "white", lwd = 1)
+  
+  # segments(
+  #   x0 = RelYear,
+  #   y0 = ebars[1, ],
+  #   y1 = ebars[2, ],
+  #   # y0 = ebars[1, ] * 1.96,
+  #   # y1 = ebars[2, ] * 1.96,
+  #   lend = 1,
+  #   lwd = 1.75,
+  #   col = "grey20"
+  # )
+  # print(bxplt)
+  Map(f = function(z, yr) {
+
+    # att <- rep(yr, length = 3)
+    att <- rep(yr, length = z[["n"]])
+
+    bxp(z, at = yr, add = TRUE,
+    frame.plot = FALSE,
+    whisklty = 1,
+    staplelty = 0,
+    outpch = 20,
+    outcex = 0.7,
+    outcol = rgb(red = 0, green = 0, blue = 0, alpha = 0.2),
+    # medcol = "darkblue",
+    yaxt = "n")
+  }, z = bxplt, yr = unique(RelYear))
+  
+  # text(
+  #   x = year,
+  #   y = max(axTicks(side = 2)),
+  #   labels = sprintf(
+  #     fmt = "period average %.1f\nperiod median %.1f",
+  #     cpue_annual_avg,
+  #     cpue_annual_med
+  #   ),
+  #   # pos = c(1, 2),  
+  #   adj = c(1, 1),
+  #   cex = 0.8, 
+  #   col = "grey30",
+  #   family = "mono"
+  # )
+  
+  # points(
+  #   x = RelYear,
+  #   y = avg[b, ][1, ],
+  #   pch = 20,
+  #   cex = 0.75,
+  #   col = "black"
+  # )
+  
+  # sets
+  # avg
+  ebars
+  
+  list(X = xrng, CLRS = lkp_col_vessels)
+  # plot(RelYear, vapply(CPUE, FUN = function(x) median(x[["CPUE"]]), FUN.VALUE = numeric(1L)))
+})
+
+
+layout(mat = 1)
+
+  par(oma = c(0,0,0.5,0))
+  
+  legend(
+    x = plt_annual[["X"]][2],
+    y = max(axTicks(side = 2)) * 1.075,
+    legend = names(plt_annual[["CLRS"]]),
+    fill = plt_annual[["CLRS"]],
+    border = NA,
+    bty = "n",
+    xpd = TRUE,
+    xjust = 1,
+    ncol = 2#,
+    # title = "Vessels: ",
+    # title.adj = c(-1, 0)
+  )
+  
+  mtext(
+    text = "Vessel count:",
+    side = 3,
+    line = -0.4,
+    adj = 0.8,
+    col = "grey30"
+  )
+  
+  
+
+```
+
+```{r plot-annual-effort, fig.width=8, fig.height=4}
+
+par(
+  oma = c(3, 1, 0.5, 0.5),
+  mar = c(0.1, 2.0, 0.5, 4.5),
+  mgp = c(2.5, 0.6, 0),
+  cex.axis = 1.0,
+  cex.lab = 1.5,
+  tcl = -0.3
+)
+
+with(data = annual[b, ], expr = {
+  
+  # for net set breaks to provide bins for coloring bars using annual net sets
+  # as gradient
+  brks <- c(0, 80, 160, 240, 320, 400)
+  
+  xrng <- range(RelYear)
+  xvals <- xrng[1]:xrng[2]
+  yrng <- range(Hours[, "TotNFH"])
+  nsets <- unlist(Hours[, "NetSets"], use.names = FALSE)
+  nsets_bins <- cut(
+    nsets,
+    breaks = brks,
+    # labels = brks,
+    right = FALSE,
+    include.lowest = TRUE
+  )
+  clramp_vals <- seq(from = 0, to = 1, length = 5)
+  
+  clrs <- rgb(
+    # colorRamp(c("yellow", "red"))(clramp_vals),
+    colorRamp(c("grey70", "grey20"))(clramp_vals),
+    maxColorValue = 255
+  )
+  
+  plot(
+    x = xrng,
+    y = c(0, yrng[2]),
+    type = "n",
+    xaxt = "n",
+    yaxt = "n",
+    las = 1,
+    xlim = xrng + c(1, -1),
+    xlab = NA,
+    ylab = NA
+  )
+  
+  # for custom grid lines and background
+  par(xaxp = c(xrng, diff(xrng)))
+  grid(lwd = 1000, col = "grey90")
+  grid(lty = 1, col = "white", lwd = 1)
+  
+  lines(
+    x = RelYear,
+    y = Hours[, "TotNFH"],
+    type = "h",
+    lend = 1,
+    lwd = 5,
+    col = clrs[as.numeric(nsets_bins)]
+  )
+  
+  axis(
+    side = 1,
+    at = xvals[xvals %% 5 == 0],
+    labels = xvals[xvals %% 5 == 0],
+    col = "transparent",
+    col.ticks = "grey30",
+    padj = -0.4
+  )
+  
+  yaxis <- AxisFormat(axTicks(side = 2))
+  
+  axis(
+    side = 2,
+    at = axTicks(side = 2),
+    labels = yaxis[["Labels"]],
+    col = "transparent",
+    col.ticks = "grey30",
+    hadj = 0.75,
+    las = 1
+  )
+  
+  mtext(text = yaxis$AxisTitle(var = "Net-fathom hour"), side = 2, line = 1.5)
+  mtext(text = "Year", side = 1, line = 1.25)
+  
+  legend(
+    x = xrng[2],
+    y = yrng[2],
+    # legend = rev(levels(nsets_bins)),
+    legend = rep(NA, 5),
+    # legend = brks[-1],
+    # legend = 1:5,
+    fill = rev(clrs),
+    # border = NA,
+    border = "white",
+    bty = "n",
+    xpd = TRUE,
+    # xjust = 1,
+    yjust = 1.5,
+    # ncol = length(levels(nsets_bins)),
+    ncol = 1,
+    # x.intersp = 5,
+    y.intersp = 0.5,
+    cex = 2,
+    text.width = 2
+  )
+  
+  # for display of breaks for color gradient of number of annual net sets
+  Map(f = function(yadj, lbls) {
+    
+    text(
+      x = xrng[2] * 1.0030,
+      y = yrng[2] * yadj,
+      labels = lbls,
+      xpd = TRUE,
+      offset =  7,
+      pos = 1
+    )
+    
+  }, yadj = seq(from = 1.16, to = 0.88, length.out = 5), lbls = brks[6:2])
+  
+  mtext(text = "Net sets", side = 4, las = 2, line = 0.75, padj = -5.0)
+  
+})
+
+
+```
+
+```{r zero-catch, eval=FALSE}
+
+# TODO: understand relation that is driving increase of zero catch since 2000s;
+# it is interesting that fraction of zero catch increases with net set count to
+# some extent (~50%); what other variables might contribute to this?
+# (31-Dec-2019)
+
+with(data = annual, expr = {
+  
+  b <- RelYear > 1967
+  
+  xrng <- range(RelYear[b])
+  yrng <- range(CPUEZeroCount[b, "Tot"])
+  
+  plot(
+    x = xrng,
+    y = yrng,
+    type = "n",
+    xaxt = "n",
+    yaxt = "n",
+    las = 1,
+    xlim = xrng + c(1, -1),
+    xlab = NA,
+    ylab = NA
+  )
+  
+  # for custom grid lines and background
+  par(xaxp = c(xrng, diff(xrng)))
+  grid(lwd = 1000, col = "grey90")
+  grid(lty = 1, col = "white", lwd = 1)
+  
+  # points(
+  #   x = RelYear[b],
+  #   y = CPUEZeroCount[b, "Tot"],
+  #   pch = 19,
+  #   col = "grey20"
+  #   # col = clrs[as.numeric(nsets_bins)]
+  # )
+  
+  # ns <- vapply(CPUE[b], FUN = function(x) {
+  #   x[["NetSets"]]
+  # }, FUN.VALUE = numeric(1L), USE.NAMES = FALSE)
+  # 
+  ns <- unlist(Hours[b, "NetSets"], use.names = FALSE)
+  
+  text(
+    x = RelYear[b],
+    y = CPUEZeroCount[b, "Tot"],
+    labels = ns
+  )
+  
+  plot(ns, CPUEZeroCount[b, "Tot"])
+  
+  # cor(ns, CPUEZeroCount[b, "Tot"])
+  # 
+  # summary(lm(CPUEZeroCount[b, "Tot"] ~ ns))
+  
+})
+
+```
+
+## Length Frequency
+
+```{r plot-len-freq, fig.height=8, fig.width=6}
+
+# for stacked plot
+mat_layout <- matrix(data = 1:5, nrow = 5, ncol = 1, byrow = TRUE)
+nf <- layout(mat = mat_layout)
+# layout.show(n = nf)
+
+# for keeping bottom & left spaces to display axes title
+# par(oma = c(4, 5, 1, 1), cex.axis = 1.5, family = "sans")
+par(
+  oma = c(4, 1, 0.5, 1),
+  cex.axis = 1.05,
+  cex.axis = 1.5,
+  cex.lab = 1.5,
+  tcl = -0.3
+)
+
+# for max value on all y-axes
+dens <- max(annual_lf[["MaxLfDens"]])
+
+plot_lf <- Map(f = function(lf, d, y) {
+  
+  par(mar = c(0.1, 4, 1.0, 0.1), mgp = c(2.5, 0.6, 0))
+  
+  # for sample size
+  nn <- lf$xstats()[["N"]]
+  
+  # create density plot
+  res <- plot(
+    lf,
+    maxY = d,
+    xTL = FALSE,
+    xTitle = FALSE,
+    yTitle = FALSE,
+    addN = FALSE
+  )
+  
+  # for labeling each plot with sample size & year
+  mtext(
+    text = bquote(expr = {n == .(nn) ~ "|" ~ year ~ .(y)}),
+    side = 3,
+    line = 0,
+    adj = 1,
+    cex = 0.7,
+    col = "grey30"
+  )
+  
+  # output eases plotting y-axis title
+  res
+  
+}, annual_lf[["Freq"]], dens, annual_lf[["RelYear"]])
+
+# for completing axis tick labeling & titles
+x_tick_lbls <- annual_lf[["Freq"]][[(as.character(year))]][["breaks"]]
+y_axis_title <- plot_lf[[as.character(year)]]$AxisTitle(var = "Density")
+
+# add x-axis tick labels & title
+axis(
+  side = 1,
+  at = x_tick_lbls,
+  labels = x_tick_lbls,
+  tcl = -0.3,
+  col = "transparent",
+  col.ticks = "grey30"
+)
+
+mtext(text = "Length bins (cm FL)", side = 1, line = 1.85)
+
+# reset to one plot then add y-axis title
+layout(mat = 1)
+mtext(text = y_axis_title, side = 2, line = 3.5)
+
+```
+
+## ByCatch
+
+```{r bycatch-display}
+
+knitr::kable(
+  bycatch[["Summary"]][[as.character(year)]][["Count"]],
+  format = "markdown",
+  row.names = FALSE
+)
+
+```
+
+```{r bycatch-measured}
+
+
+
+bc_len <- bycatch[["Summary"]][[as.character(year)]][["LengthStats"]]
+
+bc_len[] <- lapply(bc_len, FUN = unlist)
+
+knitr::kable(
+  bc_len[-(1:2), -3],
+  format = "markdown",
+  row.names = FALSE,
+  digits = 1
+)
+
+# clean up
+rm(bc_len)
+
+```
+
+```{r chinook-display-all, results='hide'}
+
+chinook <- bycatch[["Summary"]][[as.character(year)]][["Chinook"]]
+chinook <- as.data.frame(chinook, stringsAsFactors = FALSE)
+
+chinook$AdFin <- c(`FALSE` = "No", `TRUE` = "Yes")[chinook[["AdFin"]]]
+
+knitr::kable(
+  chinook[chinook[["Freq"]] != 0, ],
+  format = "markdown",
+  row.names = FALSE
+)
+
+# clean up
+# rm(chinook)
+
+```
+
+## Pinnipeds
+
+```{r pinnipeds-sb}
+
+pinnipeds_sb <- pinnipeds[["Summary"]][[as.character(year)]][["Suisun"]]
+# pinnipeds$Summary$`2019`$SanPablo # no pinnipeds for 2019
+# Narrative$
+
+Narrative$pinnipeds_per_set_sb <- sprintf(
+  fmt = "%.2f (± %.2f SD) sea lions and %.2f (± %.2f SD) seals",
+  pinnipeds_sb["AvgPerSet", "SeaLions"],
+  pinnipeds_sb["SDPerSet", "SeaLions"],
+  pinnipeds_sb["AvgPerSet", "Seals"],
+  pinnipeds_sb["SDPerSet", "Seals"]
+)
+
+Narrative$pinnipeds_raiding_sb <- sprintf(
+  fmt = "%.0f%% (sea lions) and %.2f%% (seals) of net sets",
+  pinnipeds_sb["FracRaiding", "SeaLions"] * 100,
+  pinnipeds_sb["FracRaiding", "Seals"] * 100
+)
+
+# clean up
+rm(pinnipeds_sb)
+
+```
+
+In Suisun Bay, we observed a per-set average of `r Narrative$pinnipeds_per_set_sb` within 50 meters of the net. We observed pinnipeds raiding the net during `r Narrative$pinnipeds_raiding_sb`. In San Pablo Bay, we encountered no pinnipeds.
+
+## Collaboration
+
+For the San Francisco Estuary Institute, we collected `r Narrative[["muscle_plug"]]` (Figure below).
+
+```{r plot-len-freq-mp, fig.width=6}
+
+par(cex.lab = 1.0, cex.axis = 1.25, tcl = -0.5, mgp = c(3, 0.4, 0))
+plot(muscle_plug[["LenFreq"]], xTitle = FALSE)
+mtext(text = "Length bins (cm FL)", side = 1, line = 1.5)
+
+```
+
+## Tag Sequence
+
+```{r}
+
+# do.call(rbind, tag_seq)
+
+vals <- Map(function(x, nm) {
+  rep(nm, nrow(x))
+}, tag_seq, names(tag_seq))
+
+tags <- data.frame(
+  TagVal = paste0("$ ", unlist(vals, use.names = FALSE)),
+  do.call(what = rbind, args = tag_seq),
+  row.names = NULL,
+  stringsAsFactors = FALSE 
+)
+
+knitr::kable(
+  tags,
+  format = "markdown",
+  row.names = FALSE
+)
+
+# clean up
+rm(vals, tags)
+
+```
+
+---
+
+CDFW, SportFish Unit    
+`r Sys.Date()`

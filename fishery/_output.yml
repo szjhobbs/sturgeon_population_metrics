@@ -1,0 +1,7 @@
+pdf_document: default
+word_document: default
+github_document:
+  pandoc_args: --webtex
+  keep_html: true
+html_document:
+  fig_caption: yes

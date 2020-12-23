@@ -1,0 +1,522 @@
+---
+
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_knit$set(root.dir = "~/RProjects/SturgeonPopMetrics/")
+
+```
+
+## Introduction
+
+Herein, we employ `spopmodel` to explore CA-based White Sturgeon population growth rate. (Thus, `_testing` in this file's title.) We use current and past (1970s) age-length data to begin this process.
+
+## Libraries
+
+We load the `spopmodel` package, currently available on GitHub. For now (04-Arp-2019), this is the only package required.
+
+```{r load-libraries}
+
+library(spopmodel)
+# library(package)
+
+```
+
+## Load Data
+
+We load our age-length data (in `WstAgeLenData.txt`, currently not available via GitHub). These data are from mid-1970s CDFW sampling.
+
+```{r load-data}
+
+# loads CDFW age-length data (circa mid 1970s)
+wst_age_len <- read.table(
+  file = "~/RProjects/1_DataFiles/WstAgeLenData.txt",
+  header = TRUE,
+  sep = "\t", 
+  # colClasses = c(
+  #   "character", "integer", "POSIXct", "double",
+  #   "double", rep("integer", 7), "double",
+  #   "integer"
+  # ),
+  col.names = c(
+    "ID", "Species", "Date", "FL", "TL", "Sex", "CapMethod",
+    "Location", "Age", "YearClass", "Check", "Age_1", "TLen",
+    "NewAge"
+  ),
+  stringsAsFactors = FALSE
+)
+
+# re-format date & add year variable for convenience
+wst_age_len$Date <- as.Date(wst_age_len[["Date"]], format = "%m/%d/%y")
+wst_age_len$Year <- as.numeric(format(wst_age_len[["Date"]], format = "%Y"))
+
+```
+
+Here we create some variables we'll use throughout this process. We create them here and now for convenience.
+
+```{r variables}
+
+
+
+```
+
+## 
+
+`wst_age_len` has `r nrow(wst_age_len)` observations and `r ncol(wst_age_len)` variables. The table below displays record count by year.
+
+```{r rc-year}
+
+# range(wst_age_len[["Date"]])
+
+table(wst_age_len[["Year"]], useNA = "ifany")
+
+```
+
+For this purpose, we'll limit our data to the 1970s. (Not sure where 1998 & 2014 came from.)
+
+```{r rm-recs}
+
+# remove records (n=4) where year is > 1976
+wst_age_len <- wst_age_len[wst_age_len[["Year"]] %in% 1973:1976, ]
+
+range(wst_age_len[["Date"]])
+
+```
+
+Let's check our data for missing values (i.e., NAs). As certain fields appear to hold the same data, we'll also check these accordingly (i.e., using R's `identical()`).
+
+```{r na-check}
+
+vapply(wst_age_len, FUN = function(x) {
+  sum(is.na(x))
+}, FUN.VALUE = numeric(1L))
+
+```
+
+```{r field-check}
+
+with(data = wst_age_len, expr = {
+  
+  list(
+    Age_Age1 = identical(x = Age, y = Age_1),
+    Age_NewAge = identical(x = Age, y = NewAge),
+    TL_TLen = identical(x = TL, y = TLen)
+  )
+  
+})
+
+```
+
+We'll now check range on pertinent fields. We're particularly curious about the difference between `Age` and `NewAge`.
+
+```{r range-check}
+
+# plot(wst_age_len[["Age"]] - wst_age_len[["NewAge"]])
+
+lapply(wst_age_len[c("Age", "NewAge", "TL")], FUN = range)
+
+```
+
+Let's now look at length range for all `Age` = 0. And we'll check the difference between `Age` and `NewAge`.
+
+```{r age-check}
+
+range(wst_age_len[wst_age_len[["Age"]] %in% 0, "TL"])
+
+table(wst_age_len[["Age"]] - wst_age_len[["NewAge"]])
+# sum(wst_age_len[["Age"]] %in% 0)
+
+# table(wst_age_len[["Age"]], wst_age_len[["NewAge"]])
+# plot(wst_age_len[["Age"]], wst_age_len[["NewAge"]])
+# abline(a = 0, b = 1, col = 2)
+
+```
+
+It appears biologists at the time (~1970s) certain ages should be increased by 1 (see `NewAge`). For our purposes herein, we could use either `Age` or `NewAge`. But it does seem a bit more appropriate that fish with TL between 24 and 38 would be age 1. So hereafter we'll use `NewAge` field for our analytics.
+
+## Length & Age Frequencies
+
+Before we apply our model, we must first observe length frequency and age frequency, and then calculate age distribution based on some starting abundance estiamte. The frequencies (age & length) will give us some understanding of year-class strength.
+
+#### Length Frequency
+
+Here we plot length frequency. The red vertical line denotes the medidan.
+
+```{r len-freq}
+
+freq <- Frequency(wst_age_len[["TL"]], binWidth = 5)
+
+plot(freq)
+
+```
+
+
+#### Mean Length-at-Age
+
+Our model requires mean length-at-age, so let's calculate that now. Plus, we can plot mean length-at-age to get some sense growth.
+
+```{r mean-laa}
+
+# mean length at each age
+mean_len_age <- aggregate(
+  wst_age_len["TL"],
+  by = list(Age = wst_age_len[["NewAge"]]), 
+  FUN = mean
+)
+
+# something more descriptive than 'TL'
+colnames(mean_len_age)[2] <- "MeanLen"
+
+mean_len_age
+
+```
+
+We plot `TL` as a function of `NewAge`, with noise added to reduce overplotting. We then overlay mean length-at-age.
+
+```{r plot-mean_laa}
+
+plot(
+  formula = TL ~ jitter(NewAge),
+  data = wst_age_len,
+  col = "grey70",
+  las = 1
+)
+points(mean_len_age, pch = "+", col = "darkred")
+
+```
+
+#### Age Frequency
+
+We need age frequency to ultimately get age distribution (i.e., age frequency based on some starting population). Here we simply use `base::table()` to create our age frequency.
+
+```{r age-freq}
+
+age_freq <- table(wst_age_len[["NewAge"]], dnn = NULL)
+
+age_freq
+
+```
+
+We then use `spopmodel::AgeDist()` supplying `age_freq`. We use defaults starting abundance at 48,000 and fraction of females at 0.5.
+
+```{r age-dist}
+
+age_distribution <- AgeDist(ageFreq = age_freq)
+
+age_distribution
+
+```
+
+#### Spawning Probability
+
+We calculate spawning probability using `spopmodel::SpawningProb()`. We accept the defaults using data from Champman 1989 and 0.15 as fraction of females spawning annually. For now, we assume zero spawning probability for fish less then age 10.
+
+```{r prob-spawn}
+
+# get fish age-10 & older
+bool_mlaa_gt9 <- mean_len_age[["Age"]] > 9
+
+# using default argument for mature parameter (0.15)
+p_spawn <- with(data = mean_len_age[bool_mlaa_gt9, ], expr = {
+  SpawningProb(len = MeanLen, age = Age)
+})
+
+p_spawn
+
+```
+
+#### Age Distribution: age-0
+
+Here we employ Devore's (et al. 1995) equation to calculate number of eggs based on fork length ($eggs=0.072 \times l_i^{2.94}$, where *l~i~* is mean length at age. Like maturity (i.e., spawning probability), we subset on fish > age-9.
+
+```{r devore}
+
+eggs_female <- 0.072 * (mean_len_age[bool_mlaa_gt9, "MeanLen"]^2.94)
+
+```
+
+Now that we have number of eggs per spawning female, we need to multiply this by the number of females and spawning probability. We sum this product (a vector) to get our age-0 distribution.
+
+```{r age0-freq}
+
+age_dist_gt9 <- age_distribution[["CountFemByAge"]][10:24]
+
+age0 <- sum(p_spawn[["Prob"]] * age_dist_gt9 * eggs_female)
+
+```
+
+## Model Inputs: Spawning Probability & Age Distribution
+
+We need to complete our dataframes for spawning probability and age distribution. Basically, this step combines necessary data neatly into a dataframe for use in the model. For spawning probability, we `rbind()` ages 0-9 (as all 0s) with ages 10+. For age distribution, we simply append age-0 with the rest of the dataset.
+
+```{r prob-spawn2}
+
+prob_spawn2 <- rbind(
+  data.frame(Age = 0:9, Prob = 0, Err = 0),
+  p_spawn[c("Age", "Prob", "Err")]
+)
+
+prob_spawn2
+
+```
+
+```{r age-dist2}
+
+age_dist2 <- data.frame(
+  Age = as.numeric(c(0, names(age_distribution[["CountFemByAge"]]))),
+  Freq = c(age0, unname(age_distribution[["CountFemByAge"]])),
+  row.names = NULL
+)
+
+age_dist2
+
+```
+
+## Model Inputs: Egg Count
+
+We need age-specific egg count. The process to generate such data is similar to the one that creates spawning probabilty. Here we use `spopmodel::EggCount()`, which runs linear regression on Devore (et al. 1995), and then predicts fecundity given mean-length-at-age.
+
+We `rbind()` ages-0 through -9 data as 0, given maturity begins around age-10. We assign this to variable `num_eggs`.
+
+```{r num-eggs}
+
+# egg count age-10 to age-19
+egg_count <- with(data = mean_len_age[bool_mlaa_gt9, ], expr = {
+  EggCount(len = MeanLen, age = Age)
+})
+
+num_eggs <- rbind(
+  data.frame(Age = 0:9, Count = 0, Err = 0),
+  egg_count[, c("Age", "Count", "Err")]
+)
+
+num_eggs
+
+```
+
+## Model Inputs: Survival Probability
+
+```{r prob-surv}
+
+# mus <- as.list(seq(from = 0, to = 0.30, by = 0.01))
+mus <- seq(from = 0, to = 0.30, by = 0.01)
+
+prob_survival2 <- SurvivalProb(
+  ages = 3:max(age_dist2[["Age"]]),
+  sRate = 0.946,
+  sRateErr = 0.03,
+  mu = mus,
+  estMu = 0.02,
+  agesMu = 10:15
+)
+
+# str(prob_survival2)
+
+# somehow I missed ages 0-2 so am including them here (17-Jul-2020)
+prob_survival2 <- lapply(prob_survival2, FUN = function(d) {
+  a <- prob_survival[1:3,]
+  colnames(a) <- colnames(d)
+  rbind(a, d)
+})
+
+```
+
+## Simulations
+
+Now that we have our starting data, let's run some simulations.
+
+```{r iters}
+
+iters <- 5000
+
+seed <- as.integer(Sys.time()) %% 100000
+seed
+
+```
+
+Using `prob_spawn` we'll run simulations for spawning probability. We set the seed arbitrarily to 1234.
+
+```{r sims-prob_spawn}
+
+sims_prob_spawn <- Simulations(
+  data = prob_spawn2,
+  prob = Prob,
+  std = Err,
+  iters = iters,
+  seed = seed,
+  type = "spawning"
+)
+
+# str(sims_prob_spawn)
+
+```
+
+```{r sims-num_eggs}
+
+sims_num_eggs <- Simulations(
+  data = num_eggs,
+  prob = Count,
+  std = Err,
+  iters = iters,
+  seed = seed,
+  type = "numeggs"
+)
+
+# str(sims_num_eggs)
+
+```
+
+```{r sims-prob_surv}
+
+sims_prob_surv <-mapply(
+  FUN = Simulations,
+  prob_survival2,
+  MoreArgs = list(
+    prob = "Prob",
+    std = "Err",
+    recruitment = 5,
+    iters = iters,
+    # makes a difference setting to NULL
+    # seed = 1234,
+    seed = NULL, 
+    type = "survival"
+  ),
+  SIMPLIFY = FALSE
+)
+
+```
+
+```{r sims-fecund}
+
+sex_ratio <- age_distribution[["FracFemale"]]
+
+sims_fecund <- sims_num_eggs * sims_prob_spawn * sex_ratio
+
+# str(sims_fecund)
+
+```
+
+```{r pop-proj_vars}
+
+final_age <- lapply(prob_survival2, FUN = "[", 25, 2:3)
+
+# should be TRUE
+# identical(
+#   names(sims_prob_surv),
+#   names(final_age)
+# )
+
+mu_levels <- setNames(
+  object = names(sims_prob_surv),
+  nm = names(sims_prob_surv)
+)
+
+```
+
+
+```{r pop-proj}
+
+pop_proj <- lapply(mu_levels, FUN = function(x) {
+  
+  PopProjections(
+    fSims = sims_fecund,
+    sSims = sims_prob_surv[[x]],
+    mn = final_age[[x]][["Prob"]],
+    sdev = final_age[[x]][["Err"]],
+    ageFreq = age_dist2[["Freq"]],
+    period = 20
+  )
+  
+})
+
+```
+
+```{r lambda}
+
+lambda_mu <- lapply(mu_levels, FUN = function(x) {
+  
+  mu <- as.numeric(sub(pattern = "mu_", replacement = "", x = x))
+  
+  out <- Lambda(popChanges = pop_proj[[x]]["pop.changes", ])
+  
+  out[["MuLevel"]] <- mu
+  
+  out
+  
+})
+
+lambda_mu <- do.call(what = rbind, args = lambda_mu)
+rownames(lambda_mu) <- NULL
+
+lambda_mu
+
+```
+
+```{r plot-lambda}
+
+# x & y values for drawing polygon as lower & upper bounds
+poly_list <- list(
+  x = c(
+    lambda_mu[["MuLevel"]][1],
+    lambda_mu[["MuLevel"]],
+    rev(lambda_mu[["MuLevel"]][-1])
+  ),
+  y = c(
+    lambda_mu[["QuantLow"]][1],
+    lambda_mu[["QuantUpp"]],
+    rev(lambda_mu[["QuantLow"]][-1])
+  )
+)
+
+# create the plot with appropriate limits
+plot(
+  x = range(lambda_mu[["MuLevel"]]),
+  y = range(lambda_mu[, c("QuantLow", "QuantUpp")]),
+  type = "n",
+  panel.last = abline(h = 1, col = "grey50", lty = 2, lwd = 0.25),
+  panel.first = polygon(poly_list, col = "grey90", border = NA),
+  las = 1,
+  xlab = "Mu",
+  ylab = "Lambda"
+)
+
+# add data (mean lambda over mu)
+lines(
+  x = lambda_mu[["MuLevel"]],
+  y = lambda_mu[["MeanLambda"]],
+  col = "steelblue",
+  lty = 1,
+  lwd = 3
+)
+
+# optional: add current mu
+# adding point might be better but would need to workout accurate y-val
+# points(x = 0.13, y = 0.98, col = "darkorange", pch = 19)
+abline(v = 0.13, col = "darkorange", lty = 2, lwd = 0.5)
+
+# optional: lower & upper bounds as lines
+# lines(
+#   x = c(lambda_mu[["MuLevel"]]),
+#   y = c(lambda_mu[["LBLambda"]]),
+#   col = "blue"
+# )
+# lines(
+#   x = c(lambda_mu[["MuLevel"]]),
+#   y = c(lambda_mu[["UBLambda"]]),
+#   col = "red"
+# )
+
+```
+
+<!-- 
+Left off here (08-Apr-2019)
+TODO: complete narrative above
+      add simulated data (and output)
+      start to vary inputs
+-->
+
+---
+
+CDFW, SportFish Unit    
+`r Sys.Date()`

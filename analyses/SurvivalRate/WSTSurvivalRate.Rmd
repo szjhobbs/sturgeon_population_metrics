@@ -1,0 +1,164 @@
+---
+title: "White Sturgeon Survival Rate"
+author: "CDFW"
+date: ''
+output:
+  github_document: default
+  html_document:
+    fig_caption: yes
+    keep_md: no
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE)
+
+knitr::opts_knit$set(root.dir = "~/RProjects/SturgeonPopMetrics/")
+
+```
+
+```{r libraries}
+
+library(ggplot2)
+# library(reshape2)
+# library(knitr)
+
+```
+
+```{r data}
+
+# tagging data
+SturgeonAll <- readRDS(file = "data/tagging/SturgeonAll.rds")
+AnglerTagReturn <- readRDS(file = "data/tagging/AnglerTagReturn.rds")
+
+# read in USFWS age-length data
+FedAgeLen <- readRDS(file = "data/al_key/FedAgeLen.rds")
+
+# read in CDFW extant age-length key
+WstAlkey <- read.csv(
+  file = "data/al_key/WstAlkey.csv",
+  header = TRUE,
+  col.names = c("Bins", paste0('age', 0:22))
+)
+
+```
+
+```{r source-files}
+
+source(file = "source/source_stu_hr.R")
+source(file = "source/source_stu_mark-recap.R")
+source(file = "source/functions_global_general.R")
+source(file = "source/functions_global_record_count.R")
+source(file = "source/functions_global_data_subset.R")
+source(file = "source/functions_survival_rate.R")
+source(file = "source/methods_len_freq.R")
+source(file = "source/methods_age_freq.R")
+source(file = "source/source_stu_cc.R")
+```
+
+```{r variables}
+
+# establish l-f breaks for WSTALKEY; note this alk uses TL not FL
+# wst_alkey_breaks <- c(seq(from = 21, to = 186, by = 5), Inf)
+wst_alkey_breaks <- c(WstAlkey$Bins, Inf)
+
+```
+
+```{r wst_lf}
+
+lf_wstalkey <- GetLenFreq(
+  dat = SturgeonAll,
+  colX = TL,
+  by = "RelYear",
+  breaks = wst_alkey_breaks,
+  #seqBy = 5,
+  intBins = TRUE,
+  subset = Species %in% "White" &
+    RelYear >= 1998
+)
+
+# for now does include rescue fish of 2011
+table(
+  lf_wstalkey$Data$RelYear,
+  lf_wstalkey$Data$Location,
+  useNA = "ifany"
+)
+
+
+```
+
+
+```{r wst_af1}
+
+# using extant CDFW to get age-length distribution
+af_wst <- GetAgeFreq(lf = lf_wstalkey$Freq, alk = WstAlkey)
+
+af_wst_melt <- reshape2::melt(
+  af_wst, id.vars = "RelYear", variable.name = "Age"
+)
+
+# for ease of plotting
+af_wst_melt$Age <- as.numeric(
+  sub(pattern = "age", replacement = "", x = af_wst_melt$Age)
+)
+
+```
+
+```{r surv_rate1}
+
+# get survival rate (catch curve method) by release year
+lst_cc_ouptut <- lapply(
+  split(af_wst_melt, f = af_wst_melt[["RelYear"]]), 
+  FUN = SurvivalRateCC,
+  age = Age, catch = value, ageRange = 9:22
+)
+
+# convert list output to dataframe & then unlist each column (for use in
+# plotting below)
+cc_output <- ListToDataFrame(lst_cc_ouptut)
+cc_output[] <- lapply(cc_output, FUN = unlist)
+
+# for use in plotting below & eventual display in report
+colnames(cc_output)[which(colnames(cc_output) %in% "V1")] <- "RelYear"
+
+```
+
+
+```{r cc_plot1}
+
+# ggplot(data = af_wst_melt, mapping = aes(x = Age, y = value)) +
+#   geom_bar(stat = "identity") +
+#   facet_wrap(facets = ~RelYear, ncol = 2)
+
+ggplot(data = af_wst_melt, mapping = aes(x = Age, y = value)) +
+  geom_abline(
+    mapping = aes(slope = Slope, intercept = Intercept),
+    data = cc_output,
+    alpha = 2/5
+  ) +
+  geom_point(size = 1, colour = "steelblue") +
+  facet_wrap(facets = ~RelYear, ncol = 3, scales = "free_y") +
+  scale_y_log10()
+
+```
+
+```{r table_sr1}
+
+knitr::kable(cc_output, format = "pandoc")
+
+
+```
+
+
+```{r surv_rateMR}
+
+SurvivalRateMR(
+  mark = SturgeonAll,
+  recap = AnglerTagReturn,
+  years = 1998:2016,
+  sizeSubset = LenCat %in% "leg"
+)
+
+
+```
+

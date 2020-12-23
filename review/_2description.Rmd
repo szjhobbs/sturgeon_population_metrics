@@ -1,0 +1,46 @@
+---
+
+---
+
+<!-- Basic Information & Program Element Description -->
+
+```{r setup2, include=FALSE}
+
+knitr::opts_knit$set(root.dir = "~/RProjects/SturgeonPopMetrics/")
+
+```
+
+**Program Title**: Adult Sturgeon Population Estimates  
+**Program Element Number (PEN)**: 005  
+**Agency**: California Department of Fish & Wildlife (CDFW)
+
+Principal Investigators:  
+- [Andrew Danos, CDFW](mailto:andrew.danos@wildlife.ca.gov)  
+- [Jason DuBois, CDFW](mailto:jason.dubois@wildlife.ca.gov)
+
+## Project Description
+
+This program provides estimates of abundance, relative abundance, harvest rate, and survival rate for White Sturgeon (*Acipenser transmontanus*) using data from mark-recapture (tagging), commercial passenger fishing vessel (CPFV) logbooks, and anglers (by way of the Sturgeon Fishing Report Card [Card]). Further, this program provides some information (e.g., numbers caught and released by anglers) for Green Sturgeon (*A. medirostris*) caught as by-catch in the White Sturgeon fishery. Data are limited for Green Sturgeon --- the rarer of the two species --- and thus calculation of reliable population metrics is infeasible. Despite *Adult* in the program's title, using data from CDFW's San Francisco Bay Study this program provides young-of-year (YOY) indices for both sturgeon species.
+
+#### Research Problem
+
+#### Research Objectives
+
+One primary objective is to provide reliable and up-to-date population metrics for California-based anadromous White Sturgeon. Such metrics might include estimates of abundance, harvest rate, and survival rate. Data sources are listed below.
+
+- mark-recapture (late summer - fall sampling in Suisun & San Pablo bays using trammel nets to catch mostly adult sturgeon)
+- annual sturgeon report card (required by anglers fishing for sturgeon in California)
+- annual Commercial Passenger Fishing Vessel (CPFV) logs of catch & keep and catch & release (required for each fishing trip); provides measure of relative abundance
+- otter trawl catch from San Francisco Bay Study sampling; provides a young-of-year (YOY; age-0) recruitment index
+
+The various population metrics (estimates) will guide sound management of our White Sturgey fishery. Further, these metrics may support recommendations for regulartory changes should data warrant such actions.
+
+#### Research Questions
+
+(1) What are the population dynamics of White Sturgeon in the Sacramento-San Joaquin Delta and San Francisco Estuary?
+
+(2) Do existing laws governing the fishery need to be changed?
+
+(3) Are there any regulatory recommendations needed to maintain or increase the White Sturgeon population?
+
+<!-- project's relation to IEP science strategy & Delta Science Action Agenda -->

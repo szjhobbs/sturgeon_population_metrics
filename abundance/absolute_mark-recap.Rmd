@@ -1,0 +1,240 @@
+---
+
+---
+
+```{r setup, include=FALSE}
+
+#knitr::opts_knit$set(root.dir = "~/RProjects/SturgeonPopMetrics/")
+knitr::opts_knit$set(root.dir = "U:/SportFish/Staff Files/JDuBois/0_RProjects/SturgeonPopMetrics/")
+now <- Sys.Date()
+
+```
+
+## Introduction
+
+<!-- Herein, we calculate White Sturgeon absolute abundance using CDFW mark-recaptured data. Also, <GREEN STURGEON??> -->
+
+## Libraries
+
+We load the `sportfish` package, currently available on GitHub. For now (`r now`), this is the only package required.
+
+```{r load-libraries}
+
+library(sportfish)
+# library(package)
+
+```
+
+## Load Data
+
+We load all `.rds` files from directory `data/tagging`. To keep our workspace clean, we load these files into a new environment called `Tagging`.
+
+```{r load-data}
+
+# the data directory for bay study
+data_dir <- "data/tagging"
+
+# list.files(path = data_dir, pattern = ".rds")
+Tagging <- new.env()
+
+ReadRDSFiles(fileDir = data_dir, envir = Tagging)
+
+notes <- readLines(file.path(data_dir, "data-log"), n = 2)
+notes <- paste0(notes[1], notes[2])
+
+# clean up
+rm(data_dir)
+
+```
+
+**Note**: `r notes`.
+
+## Variables
+
+Here we create some variables we'll use throughout this process. We create them here and now for convenience.
+
+```{r variables}
+
+
+```
+
+```{r split-tagging}
+
+# head(Tagging[["Sturgeon"]])
+
+catch <- Split(data = Tagging[["Sturgeon"]], splitVars = RelYear)
+
+# for desired data type
+catch$RelYear <- as.numeric(catch[["RelYear"]])
+
+```
+
+
+## Tag (Mark)
+
+```{r tag-count}
+
+# to get count of White Sturgeon disc-tagged by desired category
+
+# NLeg = legal sized at time of tagging
+# NSlt = within current slot (102-152 cm FL); may be variations due to
+#        conversions & rounding
+# NRng = between 100 & 200 cm TL (range we typically disc tag)
+
+catch$TagCount <- t(vapply(catch[["Data"]], FUN = function(d) {
+  b <- d[["Species"]] %in% "White" & d[["StuType"]] %in% "Tag"
+  tl <- Filter(f = Negate(is.na), x = d[b, "TL"])
+  nall <- sum(b)
+  nleg <- sum(d[b, "LenCat"] %in% "leg")
+  nslt <- sum(d[b, "InSlot"], na.rm = TRUE)
+  nrng <- sum(tl >= 100 & tl <=  200)
+  c(NAll = nall, NLeg = nleg, NSlt = nslt, NRng = nrng)
+}, numeric(4L)))
+# end vapply
+
+```
+
+## Catch
+
+```{r catch-cutoff-mat}
+
+catch$CutoffMat <- CatchCutoffMatrix(
+  relYear = unique(Tagging[["Sturgeon"]][["RelYear"]]),
+  minLen = c(rep(102, length = 9), 107, 112, rep(117, length = 20)),
+  maxLen = c(rep(NA, length = 9), rep(183, length = 10), rep(168, length = 12)),
+  vb = GetVBGM(Linf = 261.2, K = 0.04027, t0 = -3.638)
+)
+
+```
+
+```{r length-count}
+
+catch$LenCount <- lapply(catch[["Data"]], FUN = function(d) {
+  
+  b <- d[["Species"]] %in% "White"
+  y <- unique(d[["RelYear"]])
+  
+  clc <- CatchLengthCutoff(catch[["CutoffMat"]], year = y)
+  f <- clc[["CountCatch"]]
+  f(l = d[b, "TL"])
+  
+})
+
+# if what = rbind then perform column sums, if what = cbind perform row sums;
+# otherwise can use count_lens as a list to process catch per release year
+
+# do.call(what = cbind, args = catch[["LenCount"]])
+
+```
+
+```{r catch-c}
+
+# to get CC (i.e., `C` in MC / R) for each release (tagging) year; not sure if
+# removal of NA is needed at this point (05-Aug-2020)
+
+catch$CC <- lapply(catch[["RelYear"]], FUN = function(y) {
+  
+  o <- vapply(catch[["LenCount"]], FUN = function(x) {
+    x[names(x) %in% as.character(y)]
+  }, FUN.VALUE = numeric(1L))
+  # end vapply
+  
+  # Filter(f = Negate(is.na), x = o)
+  o
+  
+})
+# end outer lapply
+
+```
+
+## Recaptures
+
+```{r recaps}
+
+# CountRecap
+# GetStuRecap
+# class(Tagging$TagRecaptures$Data$B4010)
+# CountRecap(recaps[["CrossTab"]], n = 10)
+# dim(recaps$GetMatrixData())
+
+# list to define recapture type (rtype); minDAL is minimum days at large, where
+# 30 days ensures adequate mixing with non-tagged populations; can add other
+# items to the list as desired (05-Aug-2020)
+
+# defaults: species = 'w', lencat = NULL, minDAL = -1L
+rtype <- list(
+  All = c(lencat = NULL, minDAL = -1L),
+  Leg = c(lencat = 'l', minDAL = 30)
+)
+
+# to get summary of recaps from raw data
+recap_summary <- lapply(rtype, FUN = function(...) {
+  ApplyStuRecap(Tagging[["TagRecaptures"]][["Data"]], ...)
+})
+
+# annual (release year) recap count by recapture year
+recaps <- lapply(recap_summary, FUN = function(r) {
+  
+  # to apply table() which gets count by recapture year
+  mat <- r$GetMatrixData()
+  
+  lapply(catch[["RelYear"]], FUN = function(y) {
+    b <- mat[, "RelY"] %in% y
+    table(mat[b, "RecY"])
+  })
+  # end inner lapply
+})
+# end out lapply
+
+```
+
+## Petersen Estimates
+
+```{r petersen-ests}
+
+# to calculate Petersen Estimates (abundance [N]) based on catch & recapture
+# collected with each tagging season & number of tags release per year; because
+# C is established based on what was legal at time of tagging, these PEs are for
+# legal-at-time-of-tagging sized fish (06-Aug-2020)
+catch$PetEst <- Map(f = function(m, cc, rr) {
+  
+  # cc <- Filter(f = Negate(is.na), x = cc)
+  
+  # to select recap for appropriate year related to catch
+  b1 <- names(cc) %in% names(rr)
+  
+  # to remove same year (within season) value where C is NA (i.e., no annual
+  # estimate made for same-year sampling)
+  b2 <- !is.na(cc)
+  
+  # sets up vector of 0s to hold appropriate recapture value
+  r <- vector(mode = "integer", length = length(cc))
+  r[b1] <- rr
+  
+  # to set up alpha
+  a <- 0.05
+  
+  # for the three variations on Petersen Estimate (pe)
+  # (1) peA: N calculated for each year following sampling year
+  # (2) peC: N calculated cumulatively for C & R
+  # (3) peT: N calculated based on total (to date) C & R
+  list(
+    peA = PetersenEst(m, CC = cc[b2], RR = r[b2], alpha = a),
+    peC = PetersenEst(m, CC = cumsum(cc[b2]), RR = cumsum(r[b2]), alpha = a),
+    peT = PetersenEst(m, CC = sum(cc[b2]), RR = sum(r[b2]), alpha = a)
+  )
+  
+}, m = catch[["TagCount"]][, "NLeg"], cc = catch[["CC"]], rr = recaps[["Leg"]])
+# end Map (PetersenEst)
+
+```
+
+```{r display-pe}
+
+catch[["PetEst"]]
+
+```
+
+---
+CDFW, SportFish Unit  
+`r Sys.time()`

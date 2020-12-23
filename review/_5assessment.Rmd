@@ -1,0 +1,255 @@
+---
+
+---
+
+```{r setup5, include=FALSE}
+
+knitr::opts_knit$set(root.dir = "~/RProjects/SturgeonPopMetrics/")
+
+```
+
+<!-- strengths & weaknesses -->
+
+<!-- possibilities for discussion 25-Feb-2020 -->
+<!-- [not a sampling change per se] reward denominations -->
+<!-- [not a sampling change per se] fin ray collection -->
+
+<!-- recorded total length until 2013 (when regs changed) then fork length -->
+<!-- tagged greens and whites through 2012 stopped disc tagging greens in 2013 -->
+
+<!-- began recording effort 1968 (?) -->
+
+<!-- did we gain anything by annual sampling beginning 2005? -->
+
+## Sampling
+
+Below we display a sampling timeline covering the project's history. *Note*: we sampled only one day in 1955 (21-Jan).
+
+```{r fig.width=8, fig.height=1}
+
+sample_timeline <- with(data = Tagging[["Effort"]], expr = {
+  
+  # variables for plotting timeline of sample | no-sample
+  sampling_years <- sort(unique(RelYear))
+  range_years <- range(sampling_years)
+  all_years <- seq(
+    from = range_years[[1]],
+    to = range_years[[2]],
+    by = 1
+  )
+  non_sampled <- all_years[!(all_years %in% sampling_years)]
+  
+  # for character ranges of non-sampled years
+  i <- which(diff(c(0, non_sampled)) != 1)
+  
+  mat <- cbind(non_sampled[i], c(non_sampled[i-1], NA))
+  
+  res <- apply(mat, MARGIN = 1, FUN = function(x) {
+    x <- x[!duplicated(x) & !is.na(x)]
+    paste0(x, collapse = "-")
+  })
+  
+  # plotting timeseries of sampled & non-sampled years
+  par(mar = c(1, 0.5, 1, 0.5), oma = c(1, 0.5, 1, 0.5))
+  
+  p <- Plot(x = range_years, y = 0:1, adjUsr = 0.4)
+  p$grid(xRng = TRUE, yRng = TRUE, ny = 1)
+  
+  # add just sampling years
+  points(
+    x = sampling_years,
+    y = rep(0.5, times = length(sampling_years))
+  )
+  
+  # add non-sampled years
+  points(
+    x = non_sampled,
+    y = rep(0.5, times = length(non_sampled)),
+    col = "red",
+    pch = 4,
+    lwd = 2
+    # pch = "x"
+  )
+  
+  legend(
+    x = range_years[[2]],
+    y = 1 * 2.75,
+    legend = c("sampled", "not sampled"),
+    pch = c(1, 4),
+    col = c(1, 2),
+    pt.lwd = c(1, 2),
+    ncol = 2,
+    bty = "n",
+    xjust = 1,
+    xpd = TRUE
+  )
+  
+  Axis(p, side = 1, labelAdj = 0.25, interval = 5, offset = 1)
+  
+  list(
+    NSampled = length(sampling_years),
+    NNonSampled = length(non_sampled),
+    NPeriods = length(res),
+    Periods = res
+  )
+})
+# sample_timeline
+
+```
+
+It is not entirely clear why --- prior to 2005 --- sampling was so intermittent. We speculate in absence of routine practices, sampling followed observations of increased annual harvest. Such increases warranted data collection via mark-recapture to ensure current regulations were sufficiently protecting the fishery.
+
+Below, we show reasons for not sampling certain periods. Our default ("still investigating") is more-or-less a placeholder for our speculation. It is possible sampling in the 1990s and early 2000s followed suit with Striped Bass: periodic sampling rather than annual was sufficient. However, we have found no evidence to support this notion.
+
+```{r non-sample-display}
+
+# for display in table
+non_sample <- matrix(
+  data = c(
+    rev(sample_timeline[["Periods"]]),
+    "vessel issues & personnel redirection",
+    rep("still investigating", times = sample_timeline[["NPeriods"]] - 1)
+  ),
+  ncol = 2
+)
+
+knitr::kable(
+  non_sample,
+  format = "markdown",
+  row.names = FALSE,
+  col.names = c("Period", "Reason")
+)
+
+# section clean up
+rm(non_sample)
+
+```
+
+## Sampling Changes
+
+#### Trammel Net
+
+<!-- See Pycha 1956 for net dimesions in 1954 -->
+
+Back to at least 1968, our trammel net was configured as 8 x 25 fathom [metrics?] contiguous panels, for a total length of ~200 fathoms []. In the mid-2000s, we were having issues with pinniped interactions. To mitigate marine mammal entaglement, for the vast majority of sets in 2007 and all sets starting in 2008, we reduced in half trammel net length (to ~100 fathoms or 4 contiguous panels).
+
+Prior to 1990, our trammel net was uniformily 8-inch mesh. Beginning in 1990 and continuing to present day, we added mesh sizes 6- and 7-inch. The full net (i.e., ~200 fathoms) was then configured as 8-7-6-8-8-7-6-8 <verifiy> and the half net thus was 8-7-6-8. We added smaller mesh in response to the newly-instituted (i.e., in 1990) legal size slot limt <verify this is the reason why>. The idea being that we would catch more smaller sturgeon.
+
+changes in net materials (nylon, monofilament ?)
+
+#### Sampling Effort
+
+<!-- fishing time reduced (for pinniped mitigation) -->
+Sampling year 2006 was unintentionally hard on pinnipeds [Schreier unpublished -@mmdet-2007]. To mitigate pinniped interactions and pinniped entanglements, starting with the 2007 season we reduced to half trammel net length and reduced to about 30 minutes net soak time. We continue to implement these modifications.
+
+<!-- shift in sampling from Sep & Oct to include Aug, some Nov sampling -->
+Beginning in 2001, we expanded sampling to include August. Green Sturgeon catch had decreased noticeably in previous years during routine sampling (i.e., Sep-Oct). Biologist believed more Green Sturgeon might be caught if sampling inlcuded late summer (i.e., August), a migration period into the estuary [Kogut -@kogut-2002]. *Note*: prior to 2001, only the inagural season (1954) sampled in August.
+
+<!-- shift from a few net sets per day to 5-6 per day -->
+Coincident with a reduction in soak time was an increase in number of net sets per day. Since roughly 2008, our target has been 5 net sets per day per vessel. For most of this project's history, 3-4 net sets per day per vessel was the norm.
+
+#### Tagging
+
+Up until 2005, we disc tagged only legal-sized fish (for the most part). From 2005 to 2007, we disc tagged fish below and above the legal slot limit (even tagging one fish in 2007 at 42 cm TL). Beginning in 2008, we instituted a range of 100 cm TL to 200 cm TL, as it proved challenging to disc tag very small & very large sturgeon. The range was simply a guideline, and it was not clear why in 2005 we changed this tagging criterion.
+
+In 2007 and again in 2019, we inserted into a portion of our catch a single passive integrated transponder (aka PIT tag). Personnel turnover and management indifference were likely reasons for the long hiatus between PIT tag releases.
+
+```{r sonic-tag-count}
+
+# to get rough count of sonic tags deployed during 3-year period of 2009-2011
+b <- grepl(
+  pattern = "UCD Tag|sonic",
+  x = Tagging[["Sturgeon"]][["Notes"]],
+  ignore.case = TRUE
+)
+
+# aggregate(b ~ RelYear, data = Tagging$Sturgeon, FUN = sum)
+
+# sonic <- sum(b)
+sonic <- ceiling(sum(b) / 10) * 10
+
+# section clean up
+rm(b)
+
+```
+
+In a collaborative effort, University of California at Davis (UC Davis) researchers joined our team for field seasons 2009, 2010, and 2011 to insert into a portion of our sturgeon catch acoustic tags (<make, size, duration, etc.>). Roughly `r sonic`&pm; acoustic tags were implanted into mostly White Sturgeon. To date, the CDFW Sportfish Unit has not analyzed any acoustic tag dataset for tag detections. Likely, such analytics were done by UC Davis personnel (<citations?>).
+
+#### Research Vessels
+
+In 2006, we employed two research vessels (R/V) for the first time since the study's inception. We continued using two vessels through 2017, with 2008 excepted. In 2019, only the R/V *New Alosa* was available for sturgeon tagging.
+
+## Evaluating Effort & Efficacy
+
+<!-- a.	What is the program element staff doing to continually assess and improve the long-term monitoring effort in support of management priorities? Please provide short responses for each of the categories listed below:  -->
+<!-- i.	Assess and incorporate new variables -->
+<!-- ii. Field or analytical studies to assess current & new sampling methods -->
+<!-- iii.	Analytical studies to evaluate current and new analytical methods -->
+<!-- iv.	Evaluation of new technologies or new gear types -->
+<!-- v.	Review and improve monitoring program element processes -->
+<!-- vi.	Using historical information to change the program element design -->
+<!-- vii.	Other -->
+
+In the recent two decades, this program has done little in terms of self assessment and (or) self improvment. We have been plagued by personnel turnover, truncated field seasons due to vessel issues and (or) redirection of staff to higher priority projects, insufficient expertise in the fields of fishery management and mark-recapture, and lack of formal fishery management plan. Despite these drawbacks, we have made some changes along the way.
+
+<!-- ability to incorporate new variables -->
+#### Incorporate New Variables
+
+CDFW biologists began recording in 2005 water temperature and in 2007 tidal state (as ebb, floor, or slack) and wind and wave action per the Beaufort scale. In 2006, biologist began recording latitude and longitude for each net deployment. Though not expressly stated, it is possible collection of these additional variables would improve our ability to locate and catch sturgeon.
+
+<!-- ability to implement new sampling methods -->
+#### New Sampling Methods
+??
+
+<!-- evaluation of new gear types -->
+#### Gear Evaluation
+
+Starting in 1990, we added 6" and 7" mesh sizes to our net configuration. Presumably, targetting smaller sturgeon was the impetus behind such modification. To date, we have not statisically analyzed catch (or fish length) by mesh size.
+
+<!-- improvements over time -->
+#### General Improvements
+
+In 2015, we changed our reward denominations from \$20, \$50, and \$100 to \$50, \$100, and \$150. The \$20-\$50-\$100 configuration began in 1998, and we felt to improve reporting (return) rates an increase was necessary.
+
+## Bycatch (Other Species)
+
+```{r by-catch}
+
+by_catch <- with(data = Tagging[["Bycatch"]], expr = {
+  
+  # freq <- sort(table(Species), decreasing = TRUE)
+  freq <- aggregate(Count, by = list(s = Species), FUN = sum, na.rm = TRUE)
+  freq <- freq[order(freq[["x"]], decreasing = TRUE), ]
+  
+  # top5 <- freq[1:5]
+  # paste0(names(top5), " (n=", top5, ")", collapse = "; ")
+  
+  # freq[1:10, ]
+  freq
+})
+
+top <- 10L
+
+steelhead <- c(by_catch[by_catch[["s"]] %in% "Steelhead", ])
+steelhead <- paste0(steelhead[["s"]], " (n=", steelhead[["x"]], ")")
+
+```
+
+Below, we display the top `r top` (in overall numbers) bycatch species. We began recording bycatch in 1954[^1] (electronic records available from 1974), and `Count` includes all sampling years since 1974 This project has caught very few `r steelhead`. We have collected --- though not consistently --- length data for elasmobranchs, California Halibut, and salmonids. Sex data collected for elasmobranchs.
+
+[1]: best guess it is beginning of program
+
+```{r by-catch-show}
+
+knitr::kable(
+  by_catch[1:top, ],
+  format = "markdown",
+  col.names = c("Species", "Count"),
+  row.names = FALSE,
+  format.args = list(big.mark = ",")
+)
+
+# clean up
+rm(top, steelhead)
+
+```

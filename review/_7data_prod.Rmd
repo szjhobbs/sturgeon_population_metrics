@@ -1,0 +1,67 @@
+---
+
+---
+
+```{r setup7, include=FALSE}
+
+knitr::opts_knit$set(root.dir = "~/RProjects/SturgeonPopMetrics/")
+
+```
+
+```{r rst-version, eval=FALSE}
+
+# does not work from knitr
+rst_version <- rstudioapi::versionInfo()[["version"]]
+
+```
+
+## Data Storage
+
+Data are stored in a Tier 3 level server-based database (MS SQL Server; database name: `BDSturgeonTagging`). Data are accessed via two applications: `Managed Access Login` or `SturgeonTaggingDatabaseQueries.mdb`. These applicatons are accessible only on CDFW-Stockton based computers. Data backup is handled via methods established by the database administrator (of CDFW's Data Technology Division). 
+
+## Data Collection & Data Management
+
+Field data are recorded on one of four datasheets: (1) header <better description>; (2) tagging; (3) by-catch; and (4) salmonids. ~~We record data for each net set per vessel irrespective of catch (e.g., no fish).~~ At the end of each sampling day, a crew member reviews each datasheet for completeness and accuracy. Field crew return all datasheets to CDFW's Stockton Office, where an Environmental Scientist reviews for completeness and accuracy, editing as needed.
+
+New data are entered via `Managed Access Login`, and quality assurance is enforced through line-by-line inspection of data printouts (i.e., hardcopies). We then randomly select 10% of data for a final line-by-line review.
+
+<TODO: Data Management Plan can be included if it exists>
+
+## Data Analysis
+
+Currently, we use R & RStudio for all data analytics (`r version[["version.string"]]`; RStudio version `1.2.5033`). Data are queried through open database connectivity established with the server-based `BDSturgeonTagging`. We use SQL (structured query language) to extract desired data, and then save such extracts as `.rds` files for use in R & RStudio. We update each `.rds` file when appropriate (i.e., with new data).
+
+*Note*: we completed and compiled this report using R packages `sportfish` -@sportfish-2018 and `knitr` -@knitr-2020. File organization and R code can be found [here](https://github.com/jasondubois/StripedBassPopMetrics/tree/master/review). Find appropriate `.Rmd` (Rmarkdown) file.
+
+#### Population Metrics
+
+Detailing the steps and methods that produce various population metrics is beyond the scope of this report. Three such metrics are abundance, harvest rate, and survival rate, for which the algorithms can be found in Ricker -@ricker-1975, see equations 3.9, 3.1, & 5.1.
+
+Estimating abundance is a multi-step process. Because estimating abundance requires the number of recaptured marks (tags), it takes four years (i.e., seasons) before we consider estimates final. Estimating harvest rate includes adjusting for non-response all angler tag returns not collected directly (e.g., returned via mail). Ricker's -@ricker-1975 survival rate algorithm (5.1) requires two consecutive sampling seasons.
+
+We calculate tagging catch-per-unit effort (CPUE) as a measure of relative abundance. Further, we can measure migration on a crude scale (i.e., tagging location versus recapture location). We can estimate annual growth rate given available length-at-age data.
+
+## Data Dissemination
+
+Raw data are available upon request. We can provide a standalone copy of `BDSturgeonTagging` with necessary queries. As needed or requested, we can provide data extracts in spreadsheet format (e.g., `.xlsx` or `.csv` files).
+
+## Manuscripts | Newsletters | Memos | Reports
+
+We have published --- though nothing in 10+ years --- in peer-reviewed journals (e.g., *California Fish & Game*). Recent publications include IEP Newsletters and field season summary reports (from 2006 onward). Further, we have written memorandums as summaries of brief analytics or special projects.
+
+We make most of these documents available through our bibliography page accessed at the link below. New documents are added or old documents are updated internally through the Departments's Document Library.
+
+<!-- presentations ? -->
+
+https://wildlife.ca.gov/Conservation/Delta/Sturgeon-Study/Bibliography
+
+## Current Deliverables
+
+For 2019, we completed the following deliverables:
+
+(1) applied individually-numbered disc tags to White Sturgeon (Aug-Nov)
+(2) reported on 2019 fieldwork (Jan 2020)
+(3) corresponded with angers who reported catching disc tagged White Sturgeon (ongoing)
+(4) managed associated databases (ongoing)
+
+<!-- For some time now, we have not produced at regular intervals some important population metrics (e.g., absolute abundance; harvest rate; survival rate). Our goal is to provide within this report a few key metrics, and then make recommendations for providing regular (i.e., annual) updates. -->

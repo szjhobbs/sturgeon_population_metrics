@@ -1,0 +1,27 @@
+Table 1|| Card distribution, return, and return rate. Did not fish ('NoEffort') not an option 2007-2009. Automated License Data System implemented 2012, making possible Internet submission (IS).
+
+Table 2|| Annual White Sturgeon catch (kept or released) by angler. Displayed number is fraction of total anglers who report catching one or more sturgeon. Does not include anglers who reported 'fished no catch' or 'did not fish.' Column headings denote binned sturgeon catch, with 'Max' showing highest annual catch for one angler.
+
+Table 3|| Annual fraction of all reporting anglers who caught and then released one or more Green Sturgeon. 'Max' denotes maximum annual catch for one angler.
+
+Table 4|| Annual fraction of all reporting anglers who kept 0 (none), 1, 2, or 3 White Sturgeon per Card (calendar) year. 'NoEffort' denotes anglers reporting 'did not fish.'
+
+Table 5|| Annual count of reported 'lengths' by species CDFW identified as suspect (i.e., too small). For White Sturgeon, this includes kept and released fish, but most are released.
+
+Table 6|| Annual top 5 ranking of locations with highest White Sturgeon catch. Number is location code (in parentheses denotes percent of total).
+
+Table 7|| Annual White Sturgeon catch by month. Number represents percent of total annual catch. Note: Card not required until 01-Mar-2007, so 2007 Jan & Feb data not representative of full fishing effort.
+
+Table 8|| Annual count of anglers who reported catching a disc-tagged sturgeon and number of tags based on completeness of reported disc number.
+
+Figure 1|| Annual White Sturgeon catch (kept & released) from reported Cards. 'x' denotes number measured (released) and orange bars represent number kept (nearly all of which are measured as required by regulations).
+
+Figure 2|| Annual Green Sturgeon bycatch from reported Cards. 'x' denotes number measured.
+
+Figure 3|| Reported Green Sturgeon lengths (converted from inches to centimeters). Bottom and top of orange box denotes 25th and 75th percentile. Note: noise added to x-axis to lessen over-plotting.
+
+Figure 4|| Reported released White Sturgeon lengths (converted from inches to centimeters). Bottom and top of orange box denotes 25th and 75th percentile, 'x' denotes median. Blue box denotes current slot limit 102-152 cm FL (40-60 inches FL). Note: noise added to x-axis to lessen over-plotting.
+
+Figure 5|| Reported kept White Sturgeon lengths (converted from inches to centimeters). Bottom and top of orange box denotes 25th and 75th percentile. 'x' denotes median.
+
+Figure 6|| Heatmap (or tile plot) showing reported White Sturgeon catch by location and by month. Grey shading denotes location not an option on Card, and orange shading denotes zero reported catch.

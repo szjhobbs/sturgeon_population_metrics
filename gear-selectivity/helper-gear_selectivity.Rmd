@@ -1,0 +1,623 @@
+---
+
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_knit$set(
+  root.dir = "~/RProjects/SturgeonPopMetrics/",
+  global.par = FALSE
+)
+
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+
+now <- Sys.Date()
+
+```
+
+```{r global-par, eval=FALSE}
+
+par(
+  # bg = "white",
+  # fg = "black",
+  # col = "grey70",
+  # mar: c(bottom, left, top, right)
+  # mar = c(4, 4, 1, 1) + 0.1
+  # mar = c(5, 6, 1, 1),
+  # cex.axis = 1.5,
+  # cex.lab = 1.5,
+  col.axis = "grey40",
+  col.lab = "black",
+  # las = 1,
+  bty = "n",
+  # mgp = c(3, 0.75, 0),
+  tcl = -0.3,
+  lend = 1
+)
+
+```
+
+## Introduction
+
+Herein, we demonstrate the application of gear selectivity models on CDFW sturgeon catch data. The CDFW uses trammel nets to catch sturgeon of varying lengths. The current trammel net configuration joins 4x150' panels, where each panel is one of three mesh sizes: 6"; 7"; or 8". There are two 8" panels and one each of the 6" & 7".
+
+S. Blackburn --- when developing the Sturgeon Population Model --- employed selectivity models developed by R. Millar. Herein, we use Blackburn's methods to eventually arrived at an adjusted age frequency distribution. Such a distribution is a key component in the population model. Thus, reducing biases caused by gear selectivity could improve the population model's accuracy. 
+
+## Libraries
+
+We load the `spopmodel` & `sportfish` packages, currently available on GitHub. For now (`r now`), these are the only packages required. *Note*: masking will occur, as many functions with same names exist in both packages.
+
+```{r load-libraries, echo=TRUE}
+
+library(spopmodel)
+library(sportfish)
+
+```
+
+## Load Data
+
+We will use data included in `package:spopmodel`. We'll use the `trammel_catch` dataset. With `spopmodel` installed and loaded, simply type `trammel_catch` in your R session.
+
+```{r load-data, eval=FALSE}
+
+# the data directory for bay study
+data_dir <- "data/tagging"
+
+# list.files(path = data_dir, pattern = ".rds")
+Tagging <- new.env()
+
+ReadRDSFiles(fileDir = data_dir, envir = Tagging)
+
+notes <- readLines(file.path(data_dir, "data-log"), n = 2)
+notes <- paste0(notes[1], notes[2])
+
+# clean up
+rm(data_dir)
+
+# <!-- **Note**: `r notes`. -->
+
+```
+
+<!-- ## Variables -->
+
+<!-- Here we create some variables we'll use throughout this process. We create them here and now for convenience. -->
+
+```{r variables}
+
+range_fl <- range(trammel_catch[["FL"]])
+range_fl_text <- paste0(range_fl, collapse = " to ")
+
+# for plotting mesh size relative retention values as lines in all plots
+lkp_color_mesh <- c(
+  `6` = "#CD6600", # darkorange3
+  `7` = "#EEC900", # gold2
+  `8` = "#B22222"  # firebrick
+)
+
+```
+
+## Dataset Components
+
+```{r ds-components}
+
+dims <- dim(trammel_catch)
+str(trammel_catch)
+
+```
+
+`trammel_catch` has `r dims[[2]]` variables (fields) and `r dims[[1]]` observations (rows). Below we show the number of NA values in each variable. For this demonstration, we will use only fields `MeshSize` (trammel webbing size of 6-, 7-, or 8-inch mesh) & `FL` (measured fork length in centimeters).
+
+```{r na-count}
+
+vapply(trammel_catch, FUN = function(x) {
+  sum(is.na(x))
+}, FUN.VALUE = numeric(1L))
+
+```
+
+## Frequency by Mesh
+
+We need to calculate length frequency distribution by mesh size. To do this we split fork length (`FL`) data (using `sportfish::Split()`) on `MeshSize`. We then can apply `sportfish::Frequency()`, supplying `binWidth` as 5 and `xRange` from `r range_fl_text` cm. *Note*: after loading package `sportfish`, use `help("Split")` or `help("Frequency")` for more details on these functions.
+
+```{r mesh-split}
+
+# to create dataframe with 3 rows (one for each mesh size) and a `Data` variable
+# containing all lengths per each mesh size
+mesh_split <- Split(data = trammel_catch, vars = FL, splitVars = MeshSize)
+
+# creates list of length frequency distribution with lengths binned according to
+# argument in `binWidth`; allows for plotting histogram by mesh size
+mesh_split$Freq <- lapply(mesh_split[["Data"]], FUN = function(x, ...) {
+  sportfish::Frequency(x[["FL"]], ...)
+}, binWidth = 5, xRange = range_fl)
+# }, binWidth = 5, xRange = c(50, 215))
+
+# allows for easier creation of dataframe needed by ApplyNetFit function (see
+# further steps below); FreqExp = frequency expanded, i.e., length bins are
+# expanded by counts
+mesh_split$FreqExp <- lapply(mesh_split[["Freq"]], FUN = function(x) {
+  n <- length(x[["breaks"]])
+  rep(x[["breaks"]][-n], times = x[["counts"]])
+})
+
+```
+
+Below we display length frequency distribution by mesh size. The dashed orange vertical line indicates median value. Bin width is 5 cm. Total count (n) per mesh is provided on each plot's upper left. Overall count is `r nrow(trammel_catch)`.
+
+```{r plot-lf-mesh, fig.height=8, fig.width=6}
+
+# for stacked plot
+mat_layout <- matrix(data = 1:3, nrow = 3, ncol = 1, byrow = TRUE)
+nf <- layout(mat = mat_layout)
+# layout.show(n = nf)
+
+# for keeping bottom & left spaces to display axes title
+# par(oma = c(4, 5, 1, 1), cex.axis = 1.5, family = "sans")
+par(
+  oma = c(4, 1, 0.5, 1),
+  cex.axis = 1.05,
+  cex.axis = 1.5,
+  cex.lab = 1.5,
+  tcl = -0.3,
+  bty = "n"
+)
+
+# for uniform y-axis range
+mesh_max_dens <- vapply(mesh_split[["Freq"]], FUN = function(x) {
+  max(x[["density"]])
+}, FUN.VALUE = numeric(1L))
+
+mesh_freq <- Map(f = function(x, m) {
+  par(mar = c(0.1, 4, 1.5, 0.1), mgp = c(2.5, 0.6, 0))
+  
+  res <- sportfish:::plot.Frequency(
+    x,
+    xTL = FALSE,
+    yTL = TRUE,
+    xTitle = FALSE,
+    yTitle = FALSE,
+    maxY = max(mesh_max_dens)
+  )
+  txt <- sprintf(fmt = "mesh: %s\"", m)
+  mtext(text = txt, side = 3, line = 0, adj = 1)
+  
+  # output
+  res
+}, mesh_split[["Freq"]], mesh_split[["MeshSize"]])
+
+# for completing axis tick labeling & titles
+x_tick_lbls <- mesh_split[["Freq"]][["6"]][["breaks"]]
+y_axis_title <- mesh_freq[["6"]][["AxisTitle"]](var = "Density")
+
+# add x-axis tick labels & title
+axis(
+  side = 1,
+  at = x_tick_lbls,
+  labels = x_tick_lbls,
+  tcl = -0.3,
+  col = "transparent",
+  col.ticks = "grey30"
+)
+
+mtext(text = "Length bins (cm FL)", side = 1, line = 2)
+
+# reset to one plot then add y-axis title
+layout(mat = 1)
+mtext(text = y_axis_title, side = 2, line = 3.25)
+
+```
+
+## Apply Millar's `NetFit()`
+
+```{r apply-net-fit}
+
+# for repeating mesh size in dataframe needed for ApplyNetFit
+n <- vapply(mesh_split[["FreqExp"]], FUN = length, FUN.VALUE = numeric(1L))
+
+# creates dataframe needed by ApplyNetFit() & bins lengths as above; if not
+# needing binned lengths, then just use trammel_net as data supplied to
+# ApplyNetFit()
+mesh_data_temp <- data.frame(
+  Mesh = rep(mesh_split[["MeshSize"]], times = n),
+  FL = unlist(mesh_split[["FreqExp"]], use.names = FALSE),
+  stringsAsFactors = FALSE
+)
+
+# use if not binning lengths
+# ApplyNetFit(data = trammel_catch, mesh = MeshSize, len = FL)
+
+apply_net_fit <- ApplyNetFit(
+  data = mesh_data_temp,
+  len = FL,
+  mesh = Mesh,
+  relPower = c(1, 1, 2)
+)
+
+# clean up
+rm(n, mesh_data_temp)
+
+```
+
+Here we apply Russell Millar's gear selectivity models to our `trammel_catch` dataset. For more information, run `help("ApplyNetFit")` in your R session and check out the `References` section.
+
+`spopmodel::ApplyNetFit()` fits five of Millar's models (run `help("ApplyNetFit")` & see `Details`). It is essentially a wrapper for Millar's `NetFit()` (again, see `help("ApplyNetFit")` for more details). In short, we choose the model with the lowest deviance. See results below as we display a deviance plot for each model.
+
+**Note**: In recent years, the CDFW Sturgeon Population Study has deployed trammel nets in an 8"--6"--7"--8" configuration, where the numbers denote mesh size of each panel. Panels are 150' long and --- given the configuration --- 8"-mesh panels are fished with twice the effort as the other two. As such, fishing power (as required by Millar's models) for the entire net is `c(1, 1, 2)` (6", 7", 8").
+
+```{r plot-model-deviance}
+
+par(mfrow = c(2, 3))
+
+model_deviance <- DeviancePlots(apply_net_fit)
+
+deviance_values <- vapply(model_deviance, FUN = function(x) {
+  x["Deviance", ]
+}, FUN.VALUE = numeric(1L))
+
+model_chosen <- names(which.min(deviance_values))
+
+```
+
+Below we display the deviance value for each model. We choose the model with the lowest deviance (in this case `r model_chosen`).
+
+```{r display-deviance}
+
+deviance_values
+
+```
+
+#### Relative Retention (Selectivity)
+
+Here we apply Millar's `selncurves()` using `spopmodel::RelativeRetention()` as a convenient wrapper. At the heart of `selncurves()` is the code chunk below, where `plot_lens` are the fork length bins and `mesh_size` is a vector of mesh sizes converted to cm, if needed. `r` is essentially `selncurves()` appropriate for the selected model, and `param` holds other model parameters.
+
+`base::outer(X = plot_lens, Y = mesh_size, FUN = r, param)`
+
+The resulting matrix *A* can be standardized (optional) by dividing *A* by max(*A*). Doing so will then render 1 as the maximum value in *A*. 
+
+```{r rel-retention}
+
+rel_ret_not_stand <- RelativeRetention(
+  apply_net_fit,
+  standardize = FALSE
+)[[model_chosen]]
+
+rel_ret_stand <- RelativeRetention(
+  apply_net_fit,
+  standardize = TRUE
+)[[model_chosen]]
+
+```
+
+```{r rel-ret-overall}
+
+# for overall relative retention not just by mesh size
+rr_not_stand_row_sums <- rowSums(rel_ret_not_stand[["Data"]][2:4])
+rr_not_stand <- rr_not_stand_row_sums / max(rr_not_stand_row_sums)
+
+# assuming this is correct, because we've already standardized we now just grab
+# the max value for each row (i.e., length bin); not entirely sure if this is
+# appropriate as standardized divides the entire relative retention matrix by
+# its max value
+rr_stand <- apply(rel_ret_stand[["Data"]][2:4], MARGIN = 1, FUN = max)
+
+```
+
+#### Standardized (Overall or By Mesh Size)
+
+S. Blackburn (when developing the sturgeon population model) standardized post application of `selncurves()`. Output is that of a matrix (see first 5 rows below). S. Blackburn summed by row columns 2-4 (i.e., relative retention by each mesh size). Next, row sums were divided by max(row sums), thus standardizing the values. The results are displayed --- along with standardized values --- as the solid black line in the second of the two relative retention plots below.
+
+```{r matrix-example}
+
+head(rel_ret_not_stand[["Data"]], n = 5)
+
+```
+
+Below we plot selectivity results (*not standardized*) for model `r model_chosen` (deviance ~ `r deviance_values[[model_chosen]] %/% 1`). The 8" mesh's peak is double that of the other two because of fishing power (effort).
+
+```{r plot-not-standardized}
+
+par(bty = "n")
+
+# below works just fine but opted for custom plot for consistency within this
+# file (e.g., grid lines; background; line colors)
+# plot(rel_ret_not_stand)
+
+# for ease of plotting empty plot & then adding lines (each mesh size)
+range_x <- range(rel_ret_not_stand[["Data"]][["FL"]])
+range_y <- range(rel_ret_not_stand[["Data"]][2:4])
+plot_vars <- colnames(rel_ret_not_stand[["Data"]])
+
+plot(
+  x = range_x,
+  y = range_y,
+  type = "n",
+  las = 1,
+  xlab = "Fork length (cm)",
+  ylab = "Relative retention (selectivity)"
+)
+
+# par("xaxp")
+par(xaxp = c(par("xaxp")[1:2], 6))
+grid(lwd = 1000, col = "grey90")
+grid(lty = 1, col = "white", lwd = 1)
+
+max_rr_not_stand <- lapply(plot_vars[2:4], FUN = function(m, l, lkp) {
+  lines(
+    x = rel_ret_not_stand[["Data"]][[l]],
+    y = rel_ret_not_stand[["Data"]][[m]],
+    lwd = 2,
+    col = lkp[m]
+  )
+  max(rel_ret_not_stand[["Data"]][[m]])
+}, l = plot_vars[1], lkp = lkp_color_mesh)
+
+# for line distintion
+legend(
+  x = range_x[[1]] * 0.95,
+  y = range_y[[2]] * 1.15,
+  legend = paste0("not-std", names(lkp_color_mesh)),
+  col = lkp_color_mesh,
+  ncol = 3,
+  bty = "n",
+  lwd = 2,
+  xpd = TRUE
+)
+
+```
+
+Below we plot selectivity results (*standardized* within function `selncurves()`) for model `r model_chosen` (deviance ~ `r deviance_values[[model_chosen]] %/% 1`). The solid black line is relative retention per S. Blackburn's method, which gives an overall retention rather than a per mesh-size retention.
+
+```{r plot-standardized}
+
+par(bty = "n")
+
+# plot(rr_not_stand, rr_stand, xlim = c(0, 1), ylim = c(0, 1))
+# abline(a = 0, b = 1, col = 2)
+
+# variables for plotting (FL can be from either standardized or not standardize
+# as these values are the same for both)
+bins <- rel_ret_stand[["Data"]][["FL"]]
+range_x <- range(bins)
+range_y <- c(0, 1) # we know relative retention values are 0-1
+
+# set up empty plot for line overlay
+plot(
+  x = range_x,
+  y = range_y,
+  type = "n",
+  las = 1,
+  xlab = "Fork length (cm)",
+  ylab = "Relative retention (selectivity)"
+)
+# par("xaxp")
+par(xaxp = c(par("xaxp")[1:2], 6))
+grid(lwd = 1000, col = "grey90")
+grid(lty = 1, col = "white", lwd = 1)
+
+# not standardized by mesh size but rather overall (for all 3 meshes); per
+# method uses by S. Blackburn in population model development
+lines(x = bins, y = rr_not_stand, lwd = 3, col = "black")
+
+# adds standardized lines for each mesh size
+max_rr <- lapply(rel_ret_stand[["ColNames"]][2:4], FUN = function(nm, lkp) {
+  x <- rel_ret_stand[["Data"]][, "FL"]
+  y <- rel_ret_stand[["Data"]][, nm]
+  lines(x = x, y = y, lwd = 2, col = lkp[nm])
+  max(y)
+}, lkp = lkp_color_mesh)
+
+# for line distintion
+legend(
+  x = 50,
+  y = 1.175,
+  legend = c("overall", paste0("std", names(lkp_color_mesh))),
+  col = c("black", lkp_color_mesh),
+  ncol = 4,
+  bty = "n",
+  lwd = c(3, 2, 2, 2),
+  xpd = TRUE
+)
+
+```
+
+## Catch (Adjusted vs. Raw)
+
+Ultimately, the goal is to use relative retention to "adjust" raw catch (see equation below). This mitigates for size-selective biases between mesh sizes and thus age frequencies generated from application of an age-length key on length frequencies. For each length bin, we divide catch frequency by the relative retention value. However, the two approaches below can yield vastly different results.
+
+(1) per bin, divide catch by (overall) relative retention for "adjusted" length frequency distribution  
+(2) per bin & **per mesh size**, divide catch by relative retention then sum values by row for "adjusted" length frequency distribution
+
+Here we show results of method 1. Total catch (n) is provided in the legend. In this example, raw catch is `r nrow(trammel_catch)` fish.
+
+```{r plot-adj-raw}
+
+par(bty = "n")
+
+freq_bin_overall <- rowSums(rel_ret_not_stand[["Freq"]])
+freq_adj_overall <- freq_bin_overall / rr_not_stand
+
+bins <- rel_ret_not_stand[["Data"]][["FL"]]
+range_x <- range(bins)
+range_y <- range(freq_adj_overall)
+
+# set up empty plot for line overlay
+plot(
+  x = range_x,
+  y = c(0, range_y[2]),
+  type = "n",
+  las = 1,
+  xlab = "Length bin (cm)",
+  ylab = "Frequency"
+)
+# par("xaxp")
+par(xaxp = c(par("xaxp")[1:2], 6))
+grid(lwd = 1000, col = "grey90")
+grid(lty = 1, col = "white", lwd = 1)
+
+lines(
+  x = bins,
+  y = freq_adj_overall,
+  type = "h",
+  lend = 1,
+  lwd = 10,
+  col = "grey20"
+)
+
+lines(
+  x = bins,
+  y = freq_bin_overall,
+  type = "h",
+  lend = 1,
+  lwd = 5,
+  col = "orangered2"
+)
+
+# for bar distintion
+legend(
+  x = 50,
+  y = max(range_y) * 1.175,
+  # legend = c("adj", "raw"),
+  legend = c(
+    sprintf(fmt = "adj (n=%.0f)", sum(freq_adj_overall)),
+    sprintf(fmt = "raw (n=%.0f)", sum(freq_bin_overall))
+  ),
+  fill = c("grey20", "orangered2"),
+  ncol = 2,
+  bty = "n",
+  border = NA,
+  xpd = TRUE
+)
+
+```
+
+Here we show results of method 2. Total catch (n) is provided in the legend. Note the comparatively large adjusted n.
+
+```{r adj-freq-stand}
+
+par(bty = "n")
+
+# compute adjuste frequency on standardized relative retention
+freq_adj_stand <- AdjustedFreq(rel_ret_stand)
+
+bins <- freq_adj_stand[["FL"]]
+range_x <- range(freq_adj_stand[["FL"]])
+range_y <- range(freq_adj_stand[c("Freq", "AdjFreq")])
+
+# set up empty plot for line overlay
+plot(
+  x = range_x,
+  y = c(0, range_y[2]),
+  type = "n",
+  las = 1,
+  xlab = "Length bin (cm)",
+  ylab = "Frequency"
+)
+# par("xaxp")
+par(xaxp = c(par("xaxp")[1:2], 6))
+grid(lwd = 1000, col = "grey90")
+grid(lty = 1, col = "white", lwd = 1)
+
+lines(
+  x = bins,
+  y = freq_adj_stand[["AdjFreq"]],
+  type = "h",
+  lend = 1,
+  lwd = 10,
+  col = "grey20"
+)
+
+lines(
+  x = bins,
+  y = freq_adj_stand[["Freq"]],
+  type = "h",
+  lend = 1,
+  lwd = 5,
+  col = "orangered2"
+)
+
+# for bar distinction
+legend(
+  x = 50,
+  y = max(range_y) * 1.175,
+  # legend = c("adj", "raw"),
+  legend = c(
+    sprintf(fmt = "adj (n=%.0f)", sum(freq_adj_stand[["AdjFreq"]])),
+    sprintf(fmt = "raw (n=%.0f)", sum(freq_adj_stand[["Freq"]]))
+  ),
+  fill = c("grey20", "orangered2"),
+  ncol = 2,
+  bty = "n",
+  border = NA,
+  xpd = TRUE
+)
+
+```
+
+## Age Frequency
+
+We create an age-length key using data in `trammel_catch` and `spopmodel::MakeALKey()`. We use the same bins we've used in our length frequencies above. We then apply this age-length key to the appropriate adjusted length frequency (as applied to each mesh or applied overall). We see from the figure below age frequency using the applied-to-each-mesh method is roughly double that using the overall method (dashed blue line is intercept = 0 & slope = 1).
+
+**Note**: I am not entirely sure which application is more appropriate (overall or by mesh). Correlation is significantly positive but frequencies are markedly different.
+
+```{r alk}
+
+# lenBreaks can be from any mesh size from `Freq` list as breaks are same for
+# all 3 mesh sizes
+alk <- spopmodel::MakeALKey(
+  data = trammel_catch,
+  len = FL,
+  age = Age,
+  lenBreaks = mesh_split[["Freq"]][["6"]][["breaks"]]
+)
+
+# run frequency (by length bin) through alk to get age frequency distributions
+freq_age_stand <- colSums(alk * freq_adj_stand[["AdjFreq"]], na.rm = TRUE) %/% 1
+freq_age_overall <- colSums(alk * freq_adj_overall, na.rm = TRUE) %/% 1
+
+```
+
+```{r age-freq-compare}
+
+par(
+  mar = c(4, 4, 0.5, 1),
+  mgp = c(2, 0.35, 0),
+  cex.axis = 1.05,
+  # cex.axis = 1.5,
+  cex.lab = 1.05,
+  tcl = -0.3,
+  bty = "n"
+)
+
+lim <- c(0, max(freq_age_stand, freq_age_overall))
+xtext <- "Age frequency (selectivity applied by mesh)"
+ytext <- "Age frequency (selectivity applied overall)"
+
+plot(
+  x = lim,
+  y = lim,
+  type = "n",
+  las = 1,
+  xlab = xtext,
+  ylab = ytext
+)
+
+# par(xaxp = c(par("xaxp")[1:2], 6))
+grid(lwd = 1000, col = "grey90")
+grid(lty = 1, col = "white", lwd = 1)
+
+abline(a = 0, b = 1, col = "steelblue", lty = 2, lwd = 0.5)
+
+points(
+  x = freq_age_stand,
+  y = freq_age_overall,
+  pch = 1,
+  col = "orange2",
+  cex = 1.25,
+  lwd = 1.5
+)
+
+```
+
+---
+CDFW, SportFish Unit  
+`r format(Sys.time(), format = "%b-%d-%Y, %H:%M")`

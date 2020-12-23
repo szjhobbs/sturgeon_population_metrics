@@ -1,0 +1,1349 @@
+---
+
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_knit$set(
+  root.dir = "~/RProjects/SturgeonPopMetrics/",
+  global.par = FALSE
+)
+
+# fig.align needed for fig label to appear in `markdown`
+knitr::opts_chunk$set(echo = FALSE, fig.align = "left")
+
+```
+
+<!-- chunks for data loading, data clean up, & global variables -->
+
+```{r data-log-date}
+
+data_log <- readLines("data/card/data-log")[1]
+ptrn <- "\\d{4}\\-\\d{2}\\-\\d{2}\\s{1}\\d{2}\\:\\d{2}\\:\\d{2}"
+
+dte <- gregexpr(pattern = ptrn, text = data_log)
+
+srt <- dte[[1]][1]
+stp <- attr(dte[[1]], which = "match.length")
+
+dte <- substr(data_log, start = srt, stop = srt + (stp - 1))
+
+# clean up
+rm(srt, stp, data_log, ptrn)
+
+```
+
+```{r load-libraries}
+
+# `sportfish` currently available on GitHub
+
+library(sportfish)
+# library(package)
+
+```
+
+```{r global-par}
+
+# source(file = "presentations/.base-par.R")
+
+```
+
+```{r load-data, results='hide'}
+
+# load all `.rds` files from directory `data/card`; to keep the workspace clean
+# load these files into a new environment called `Card`
+
+# the data directory for bay study
+data_dir <- "data/card"
+
+# list.files(path = data_dir, pattern = ".rds")
+
+Card <- new.env()
+ReadRDSFiles(fileDir = data_dir, envir = Card)
+
+# clean up
+rm(data_dir)
+
+```
+
+```{r variables}
+
+# variables created here for use throughout file
+
+# boolean for extracting within data green sturgeon records only
+b_gst <- Card[["AnglerCatch"]][["Species"]] %in% "Green"
+
+# for narrative or analytics when needed
+years <- unique(Card[["AnglerCatch"]][["Year"]])
+
+# to display tables for current Card year only
+current_card_year <- 2019
+
+# for narrative when referrencing current calendar year
+current_year <-  as.numeric(format(Sys.Date(), format = "%Y"))
+
+# list to loop through desired species-fate groupings
+lst_stu <- list(
+  GST = c("Green", ""),
+  WSTk = c("White", "kept"),
+  WSTr = c("White", "released")
+)
+
+# for use in annual analytics by location codes
+loc_lvls <- names(table(Card[["AnglerCatch"]][["LocCode"]]))
+
+# for proper identification of angler-reported reward tag
+Card[["AnglerCatch"]]$CheckTag <- t(vapply(
+  Card[["AnglerCatch"]][["RewardDisk"]],
+  FUN = CheckCardTag,
+  FUN.VALUE = character(2L)
+))
+
+# for consistency & clean output
+dimnames(Card[["AnglerCatch"]][["CheckTag"]])[[1]] <-
+  seq_len(length.out = nrow(Card[["AnglerCatch"]]))
+
+```
+
+```{r gst-kept, eval=FALSE, message=FALSE}
+
+# In 2009, one angler (perhaps erroneously) reported keeping a Green Sturgeon.
+# For simplicity, we'll set fate to blank (i.e., empty character as "") for all
+# Green Sturgeon.
+
+i_gst_kept <- with(data = Card[["AnglerCatch"]], expr = {
+  which(Fate %in% "kept" & Species %in% "Green")
+})
+
+g_cols <- c("Year", "CaptureDate", "LocCode", "Species", "Fate", "FL_cm")
+
+knitr::kable(
+  Card[["AnglerCatch"]][i_gst_kept, g_cols],
+  format = "pandoc",
+  row.names = FALSE
+)
+
+# clean up
+rm(g_cols)
+
+```
+
+```{r gst-remove-fate, results='hide'}
+
+Card[["AnglerCatch"]][["Fate"]][b_gst] <- ""
+
+# clean up
+# rm(b_gst, i_gst_kept)
+rm(b_gst)
+
+```
+
+<!-- include child files -->
+
+```{r _1summary, child="annual_card_files/_1summary.Rmd"}
+```
+
+```{r _2catch, child="annual_card_files/_2catch.Rmd"}
+```
+
+```{r _3catch-angler, child="annual_card_files/_3catch-angler.Rmd"}
+```
+
+```{r _4catch-season, child="annual_card_files/_4catch-season.Rmd", warning=FALSE}
+```
+
+<!-- caption automation here -->
+
+```{r caption-periods}
+
+# to get year ranges for table & figure captions
+
+pd_cs <- paste0(range(card_summary[["Year"]]), collapse = "-")
+pd_ct <- paste0(range(catch[["Year"]]), collapse = "-")
+pd_ca <- paste0(range(catch_angler_year[["Year"]]), collapse = "-")
+
+pd_tabs <- c(pd_cs, pd_ct, rep(pd_ca, times = 2), rep(pd_ct, times = 4))
+
+```
+
+```{r captions}
+
+# to create figure & table captions
+FigCap <- Caption(label = "Figure", sep = ".")
+TabCap <- Caption(label = "Table", sep = ".")
+
+caps <- ReadCaptionFile(file = "fishery/annual_card_files/captions")
+
+caps_names <- names(caps)
+ntabs <- sum(grepl(pattern = "^table", x = caps_names))
+nfigs <- sum(grepl(pattern = "^figure", x = caps_names))
+
+# for ease of use within narrative
+fcn <- FigCap$Num
+tcn <- TabCap$Num
+
+figures <- Map(f = function(nm, i, p) {
+  nm <- paste0(nm, i)
+  substitute(
+    expr = FigCap$Show(cap = a, period = pd),
+    env = list(a = caps[[nm]], pd = p)
+  )
+}, nm = "figure", i = seq_len(nfigs), p = pd_ct)
+
+tables <- Map(f = function(nm, i, p) {
+  nm <- paste0(nm, i)
+  substitute(
+    expr = TabCap$Show(cap = a, period = pd),
+    env = list(a = caps[[nm]], pd = p)
+  )
+}, nm = "table", i = seq_len(ntabs), p = pd_tabs)
+
+# section clean up
+rm(caps, caps_names, ntabs, nfigs)
+
+```
+
+<!-- begin narrative below -->
+
+## Introduction
+
+Herein provides a summary of California Sturgeon Report Card (Card) data. Since 2007, the Card has been required of any angler fishing for sturgeon. It is part of a suite of sport fishing regulations intended to protect California’s year-round White Sturgeon fishery while increasing protections for the federally-threatened Green Sturgeon population and adding resiliency to the conservation-dependent White Sturgeon population. Card data are complementary to on-going research and monitoring conducted by the California Department of Fish and Wildlife (CDFW) and other entities.
+
+The Card includes fields for angler contact information (pre-printed), retained White Sturgeon, and released sturgeon. To aid CDFW’s efforts to reduce illegal commercialization of sturgeon and to enforce the daily and annual bag limits on White Sturgeon, each Card also includes detachable single-use serially numbered Card-specific tags to be placed on retained White Sturgeon. Anglers must record the day, month, and location for any sturgeon they catch and keep or catch and release. Anglers also must record sturgeon length if kept. Though not required, many anglers record length for sturgeon released. A 'Reward Disk' field is available should the angler catch a sturgeon with a CDFW-affixed disc tag.
+
+**NOTES**
+
+(1) Card data are not static, and summaries may change as new data become available. The current summary year (typically one year behind current calendar year) is most affected by this. This summary report is updated periodically as new data are collected. The most recent data extraction was `r format(as.POSIXct(dte), format = "%d-%b-%Y @ %H:%M")`.
+
+(2) Reporting for current valid Card (year `r current_year`) is not due until 31-Jan-`r current_year + 1`. Consider this when viewing any summary herein for `r current_year`.
+
+(3) From 2007-2017, CDFW produced single-year Card summary reports. These reports are available at https://wildlife.ca.gov/Conservation/Delta/Sturgeon-Study/Bibliography, find title *'YYYY' Sturgeon Fishing Report Card: Preliminary Data Report*, though updated annual summaries are found herein. The CDFW's Sportfish Unit will no longer produce single-year summaries.
+
+(4) The Card was first made available 01-Mar-2007. Some anglers reported data for Jan 2007 & Feb 2007; however, catch data are a bit 'thin' for this period compared to the norm. Keep this in mind when interpreting summaries herein.
+
+(5) Card location descriptions as written are long. For conciseness, locations *codes* are displayed in figures and tables herein. For reference, please see table in section 'Card Location Codes and Descriptions.'
+
+(6) 'disk' or 'disc' are used interchangeably when referring to the external tag CDFW affixes to White Sturgeon. The Card uses 'disk'.
+
+*CDFW contact*: [Jason DuBois](mailto:jason.dubois@wildlife.ca.gov)
+
+## Distribution and Return
+
+The Card has been distributed through the Automated License Data System (ALDS) since 2012. From 2007 through 2012, the Card was issued free of charge. A fee of ~\$8 was set in 2013. Initially, Cards were categorized as catch or no catch, but in 2010 a 'did not fish' check box was included (Table `r tcn()`).
+
+The ALDS affords anglers on-line reporting. There has been a steady increase of anglers making use of such accommodation (Table `r tcn()`, see 'IS' or Internet submission). Further, there has been an increase overall in reporting ('ReportingRate'), though it seems to have reached a plateau (Table `r tcn()`; ~`r max(card_summary[["ReturnRate"]]) %/% 1`%).
+
+Table `r tcn()` field names explained below for reference.
+
+- left-most column: calendar year for which Card was issued (sold)
+- **Issued**: number of Cards issued (or sold post 2012)
+- **NoEffort**: number of anglers reporting 'did not fish' (available from 2010)
+- **NoCatch**: number of anglers reporting 'fished, no catch'
+- **Catch**: number of anglers reporting catching one or more sturgeon
+- **ReturnRate**: sum of NoEffort, NoCatch, Catch divided by Issued
+- **NotReturned**: number of Cards not returned
+- **CC**: Control Center - Card entered by CDFW staff
+- **IS**: Internet Submission - Card entered (reported) on-line by angler
+
+*`r eval(tables[[1]])`*
+```{r disp-card-summary}
+
+br <- card_summary[["Year"]] <= current_card_year
+# bc <- !(colnames(card_summary) %in% "CatchAlds")
+bc <- !(colnames(card_summary) %in% c("Year", "CatchAlds"))
+
+row.names(card_summary) <- card_summary[["Year"]]
+
+# removed br to show current calendar year (17-Apr-2020)
+knitr::kable(
+  # card_summary[br, bc],
+  card_summary[, bc],
+  format = "pandoc",
+  digits = 2,
+  row.names = TRUE,
+  format.args = list(big.mark = ",")
+)
+
+# chunk clean up
+rm(br, bc)
+
+```
+
+## Reported Catch
+
+```{r wst-catch-avg-narrative}
+
+# TODO: put safegaurd in here for current calendar year catch that may not be
+# complete & could greatly lower the average; same with GST too (22-Apr-2020)
+
+catch_nar <- (rowMeans(vapply(catch[["WST"]], FUN = function(d) {
+  d[, "Tot"]
+}, FUN.VALUE = numeric(2L))) %/% 100) * 100
+
+catch_nar <- format(catch_nar, big.mark = ",")
+
+```
+
+Anglers must report sturgeon catch, whether kept or released. Anglers may keep only White Sturgeon, with bag limits of one daily and three annually. On average, each year anglers keep about `r catch_nar[["kept"]]` White Sturgeon (Figure `r fcn()`). Anglers catch and release an annual average of about `r catch_nar[["released"]]` White Sturgeon (Figure `r fcn()`).
+
+```{r plot-wst-catch}
+
+# plotting WST catch: uses `catch` dataframe
+
+# to set plot margins for desired display
+par(
+  oma = c(1, 1, 0.5, 0.25),
+  mar = c(1.5, 1.5, 1.25, 0.25)#,
+  # mgp = c(2.5, 0.6, 0),
+  # cex.axis = 1.0,
+  # cex.lab = 1.5,
+  # tcl = -0.3
+)
+
+# to set max y-value for plot limits
+max_catch_year <- vapply(
+  catch[["WST"]],
+  FUN = function(d) max(d[, "Tot"]),
+  FUN.VALUE = numeric(1L)
+)
+
+# empty plot based on total WST catch for all years
+p_catch <- Plot(x = range(years), y = c(0, max(max_catch_year)))
+p_catch$grid(xRng = TRUE)
+
+# add bars to plot
+p_catch_bars <- Map(f = function(d, y) {
+  
+  # for dodging (offsetting) kept & released
+  off <- 0.18
+  
+  # total WST kept
+  points(
+    x = y - off,
+    y = d["kept", "Tot"],
+    type = "h",
+    col = "orange2",
+    lwd = 15,
+    lend = 1
+  )
+  
+  # total WST released
+  points(
+    x = y + off,
+    y = d["released", "Tot"],
+    type = "h",
+    col = "steelblue",
+    lwd = 15,
+    lend = 1
+  )
+  
+  # X marking number released WST measured
+  points(
+    x = y + off,
+    y = d["released", "Meas"],
+    col = "grey20",
+    pch = 4,
+    cex = 0.75
+  )
+  
+}, catch[["WST"]], catch[["Year"]])
+# end Map
+
+# to display axes ticks & labels
+Axis(p_catch, side = 1, cexAxis = 1, labelAdj = 0.3, interval = 2)
+yax <- Axis(p_catch, side = 2, cexAxis = 1, labelAdj = 0.3, format = TRUE)
+mtext(text = "Year", side = 1, line = 1.2, cex = 1)
+mtext(text = yax$AxisTitle(var = "Count"), side = 2, line = 1.2, cex = 1)
+
+# just to include note on plot's bottom right corner
+mtext(
+  text = "(x notes number measured)",
+  side = 1,
+  line = 1.1,
+  cex = 0.75,
+  adj = 0.9,
+  col = "grey30",
+  font = 3
+)
+
+# to inform viewer about colored bars
+legend(
+  x = p_catch[["xrng"]][[2]],
+  y = p_catch[["yrng"]][[2]] * 1.13,
+  legend = c("kept", "released"),
+  fill = c("orange2", "steelblue"),
+  xjust = 1,
+  xpd = TRUE,
+  border = NA,
+  bty = "n",
+  ncol = 2
+)
+
+# chunk clean up
+rm(yax, p_catch_bars, max_catch_year)
+
+```
+
+*`r eval(figures[[1]])`*
+
+```{r gst-catch-avg-narrative}
+
+# see TODO in `wst-catch-avg-narrative`
+
+catch_gst_nar <- (mean(catch[["GST"]][,"Tot"]) %/% 10) * 10
+
+```
+
+Green Sturgeon are bycatch in the White Sturgeon fishery. Anglers may not keep a Green Sturgeon and annually release on average about `r catch_gst_nar` (Figure `r fcn()`).
+
+```{r plot-gst-catch}
+
+# to set plot margins for desired display
+par(
+  oma = c(1, 1, 0.25, 0.25),
+  mar = c(1.5, 1.5, 0.25, 0.25)#,
+  # mgp = c(2.5, 0.6, 0),
+  # cex.axis = 1.0,
+  # cex.lab = 1.5,
+  # tcl = -0.3
+)
+
+p_gst <- Plot(x = catch[["Year"]], y = catch[["GST"]][, "Tot"], y0 = TRUE)
+points(p_gst, type = "h", lwd = 30, col = "steelblue", xRng = TRUE)
+
+# X marking number released WST measured
+points(
+  x = p_gst$data()[["x"]],
+  y = catch[["GST"]][, "Meas"],
+  col = "grey20",
+  pch = 4,
+  cex = 0.75
+)
+
+# to display axes ticks & labels
+Axis(p_gst, side = 1, cexAxis = 1, labelAdj = 0.3, interval = 2)
+yax <- Axis(p_gst, side = 2, cexAxis = 1, labelAdj = 0.3, format = TRUE)
+mtext(text = "Year", side = 1, line = 1.2, cex = 1)
+mtext(text = yax$AxisTitle(var = "Count"), side = 2, line = 1.3, cex = 1)
+
+# just to include note on plot's bottom right corner
+mtext(
+  text = "(x notes number measured)",
+  side = 1,
+  line = 1.1,
+  cex = 0.75,
+  adj = 0.9,
+  col = "grey30",
+  font = 3
+)
+
+# chunk clean up
+rm(yax)
+
+```
+
+*`r eval(figures[[2]])`*
+
+The Card provides species check boxes (White or Green) for fish released with no reward disk present. No such check boxes exist for fish released with reward disk present, given a correctly recorded disk tag number provides trace back to CDFW release data. Annually, on average, about `r mean(catch[["Unk"]]) %/% 1` sturgeon cannot be identified to species given the available information.
+
+```{r disp-unk, eval=FALSE}
+
+# maybe, but might just work into narrative somehow
+
+catch[c("Year", "Unk")]
+
+```
+
+## Catch per Angler
+
+Roughly &frac23; to &frac34; of anglers who report catching sturgeon catch only 1 or 2 White Sturgeon per year (includes both kept and released; Table `r tcn()`). Few anglers (<4%) catch 15 or more, and each year at least one angler reports catching many White Sturgeon (Table `r tcn()`, field 'Max').
+
+*`r eval(tables[[2]])`*
+```{r disp-catch-per-angler}
+
+# chunk displays WST catch per angler, where catch has been binned by 2 (e.g.,
+# 1-2 represents anglers who caught 1-2 WST [either kept or released])
+
+# Max = MaxPerSingleAngler
+col_names <- c(dimnames(catch[["PerAnglerBinned"]])[[2]], "Max")
+
+# call to data.frame needed to ensure proper formatting
+knitr::kable(
+  data.frame(
+    # catch[["PerAnglerBinned"]],
+    prop.table(catch[["PerAnglerBinned"]], margin = 1),
+    catch[["MaxWSTPerAngler"]]
+  ),
+  format = "markdown",
+  digits = 2,
+  row.names = TRUE,
+  col.names = col_names
+)
+
+# chunk clean up
+rm(col_names)
+
+```
+
+#### 2013-present
+
+In the ALDS-era and post-2012, Card reporting has consistently offered three categories: did not fish; fished no catch; and fished (& caught). This facilitates analyzing catch for the angling population expending effort (i.e., to not include 'did not fish' anglers).
+
+```{r gst-frac-anglers-narratvie}
+
+# for average, sets to 1000 number of reporting anglers; this avoid including
+# values where very few anglers have reported
+
+# TODO: decided whether or not 1000 anglers is a good limit, then maybe
+# implement for entire doc
+
+n_anglers <- 1000L
+
+b <- catch_angler_year[["GST"]][, "Anglers"] >= n_anglers
+
+avg <- mean(catch_angler_year[["GST"]][b, "Frac"])
+
+gst_frac_narrative <- sprintf(fmt = "%.1f%% (%.3f)", avg * 100, avg)
+
+# section clean up
+rm(b, avg)
+
+```
+
+Annually, on average about `r gst_frac_narrative` of anglers (n &ge; `r n_anglers` reporting) who fish catch and release at least one Green Sturgeon (Table `r tcn()`). Some anglers do catch and release more than one Green Sturgeon annually (Table `r tcn()`, see 'Max' field).
+
+*`r eval(tables[[3]])`*
+```{r disp-gst-2013_now}
+
+# Anglers = number who reported & who went fishing
+# AngGST = number anglers who caught a GST
+# Count = total # GST caught per year
+# MaxAngler = max # GST per single angler
+# Frac = fraction of anglers reporting having fished who caught a GST
+#        (includes those who got skunked but not those who did not fish)
+# DNF = did not fish
+
+# catch_angler_year[["GST"]]
+
+knitr::kable(
+  # catch_angler_year[["GST"]][, c("Anglers", "Frac", "MaxAngler")],
+  catch_angler_year[["GST"]][, c("AngGST", "Frac", "MaxAngler")],
+  format = "markdown",
+  digits = 4,
+  row.names = TRUE,
+  format.args = list(big.mark = ","),
+  col.names = c("Anglers", "Fraction", "Max")
+)
+
+```
+
+```{r wst-frac-anglers-narratvie}
+
+n_anglers <- 1000L
+
+b <- catch_angler_year[["ReportWSTk"]][, "Anglers"] >= n_anglers
+
+avg <- mean(catch_angler_year[["ReportWSTk"]][b, "1"])
+
+wst_frac_narrative <- sprintf(fmt = "%.0f%% (%.2f)", avg * 100, avg)
+
+wst_dnf_narrative <- range(catch_angler_year[["ReportWSTk"]][b, 6]) * 100
+
+# wst_dnf_narrative %/% 0.01
+
+wst_dnf_narrative <- sprintf(
+  fmt = "%.0f%%-%.0f%%",
+  wst_dnf_narrative[[1]],
+  wst_dnf_narrative[[2]]
+)
+
+# section clean up
+rm(b, avg)
+
+```
+
+Of reporting anglers (n &ge; `r n_anglers`, including 'did not fish'), about `r wst_frac_narrative` on average keep one White Sturgeon. Fewer still keep the limit of three (Table `r tcn()`). Roughly `r wst_dnf_narrative` anglers reported 'did not fish.'
+
+*`r eval(tables[[4]])`*
+```{r disp-wstk-frac-anglers}
+
+# catch_angler_year[["ReportWSTk"]]
+
+knitr::kable(
+  catch_angler_year[["ReportWSTk"]], #* 100,
+  format = "markdown",
+  digits = 4,
+  row.names = TRUE,
+  format.args = list(big.mark = ","),
+  col.names = c(
+    "Anglers", "None", "Kept-1",
+    "Kept-2", "Kept-3", "NoEffort"
+  )
+)
+
+```
+
+```{r cnr-narrative}
+
+n_anglers <- 1000L
+
+b <- catch_angler_year[["CatchRelease"]][, "Anglers"] >= n_anglers
+
+cnr_frac <- range(catch_angler_year[["CatchRelease"]][b, "Frac"])
+
+cnr_narrative <- sprintf(
+  fmt = "%.1f%% and %.1f%%",
+  cnr_frac[[1]] * 100,
+  cnr_frac[[2]] * 100
+)
+
+cnr_yr_narrative <- paste0(
+  range(catch_angler_year[b, "Year"]),
+  collapse = "-"
+)
+
+# section cleanup
+rm(cnr_frac, b)
+
+```
+
+To derive the number of anglers who actively practice catch-n-release only is not possible given available data. However, of the reporting anglers who fished, between `r cnr_narrative` released sturgeon yet retained none (`r cnr_yr_narrative`, years with &ge; `r n_anglers` reporting).
+
+```{r plot-mosaic, eval=FALSE}
+
+# a possibiliy for displaying this kind of info might be more informative than
+# the table above (13-Apr-2020)
+
+plot(catch_angler_year[["WSTkept"]][["2019"]])
+
+```
+
+## Length
+
+Anglers must report length for White Sturgeon kept. Anglers are not required to report length of released fish, but some do, typically in the species check box. Anglers report inches, as required by regulations, and herein lengths were converted to centimeters fork length (FL).
+
+Occasionally, an angler will report a suspiciously small length (i.e., &le; 10). Likely, here the angler is using short hand for catch (i.e., number caught). So, any "length" &le; 10 is flagged and set to `NA` for analytical purposes (Table `r tcn()`).
+
+*`r eval(tables[[5]])`*
+```{r disp-length-check}
+
+knitr::kable(catch[["LenCheck"]], format = "markdown")
+
+```
+
+#### Green Sturgeon
+
+Of the reported valid lengths, most Green Sturgeon are less than 100 cm (~40 inches; Figure `r fcn()`). The orange box represents the interquartile range (25%-75%).
+
+```{r plot-gst-len}
+
+par(
+  oma = c(0.5, 0.5, 0.25, 0.25),
+  mar = c(2, 2.5, 0.25, 0.25)
+)
+
+p_gst_len <- Plot(
+  data = Card[["AnglerCatch"]],
+  x = Year,
+  y = FL_cm,
+  subset = Species %in% "Green"
+)
+
+p_gst_len$grid(xRng = TRUE)
+
+points(
+  formula = y ~ jitter(x),
+  data = p_gst_len$data(),
+  pch = 1,
+  col = rgb(red = 0, green = 0, blue = 0, alpha = 0.5)
+)
+
+rect(
+  xleft = catch[["Year"]] - 0.25,
+  ybottom = catch[["GSTLenQuant"]][, "p25"],
+  xright = catch[["Year"]] + 0.25,
+  ytop = catch[["GSTLenQuant"]][, "p75"],
+  col = "transparent",
+  # density = NA,
+  border = "orange2",
+  lwd = 2
+)
+
+Axis(p_gst_len, side = 1, labelAdj = 0.3, interval = 2)
+Axis(p_gst_len, side = 2, labelAdj = 0.4)
+mtext(text = "Year", side = 1, line = 1.3)
+mtext(text = "Fork length (cm)", side = 2, line = 2)
+
+```
+
+*`r eval(figures[[3]])`*
+
+#### White Sturgeon (released)
+
+Length distributions indicate annual median values below 102 cm FL, the lower bound for the slot (Figure `r fcn()`, see 'x' on figure). From 2013-2019, it appears anglers were catching more sub-slot sized fish, measuring more sub-slot sized fish, or a combination of both (Figure `r fcn()`, see progressively darker points below the slot). Anglers released White Sturgeon that could have been retained.
+
+```{r plot-wstr-len}
+
+par(
+  oma = c(0.5, 0.75, 0.25, 0.25),
+  mar = c(2, 2.75, 0.25, 0.25)
+)
+
+p_wstr_len <- Plot(
+  data = Card[["AnglerCatch"]],
+  x = Year,
+  y = FL_cm,
+  subset = Species %in% "White" &
+    Fate %in% "released"
+)
+
+p_wstr_len$grid(xRng = TRUE)
+
+rect(
+  xleft = min(catch[["Year"]]) - 0.3,
+  ybottom = 102,
+  xright = max(catch[["Year"]]) + 0.3,
+  ytop = 152,
+  col = "transparent",
+  lwd = 2,
+  # density = NA,
+  # border = rgb(red = 0, green = 0, blue = 0.9, alpha = 0.2)#,
+  border = "steelblue4"
+)
+
+points(
+  formula = y ~ jitter(x),
+  data = p_wstr_len$data(),
+  pch = 1,
+  cex = 0.5,
+  col = rgb(red = 0, green = 0, blue = 0, alpha = 0.1)
+  # col = grey(level = 0.5, 0.2)
+)
+
+rect(
+  xleft = catch[["Year"]] - 0.25,
+  ybottom = catch[["WSTrLenQuant"]][, "p25"],
+  xright = catch[["Year"]] + 0.25,
+  ytop = catch[["WSTrLenQuant"]][, "p75"],
+  col = "transparent",
+  # density = NA,
+  border = "orange2",
+  lwd = 2
+)
+
+#  to display median as 'x'
+points(
+  x = catch[["Year"]],
+  y = catch[["WSTrLenQuant"]][, "p50"],
+  pch = 4,
+  lwd = 2,
+  col = "orange2"
+)
+
+Axis(p_gst_len, side = 1, labelAdj = 0.3, interval = 2)
+Axis(p_gst_len, side = 2, labelAdj = 0.4)
+mtext(text = "Year", side = 1, line = 1.3)
+mtext(text = "Fork length (cm)", side = 2, line = 2.1)
+
+```
+
+*`r eval(figures[[4]])`*
+
+#### White Sturgeon (kept)
+
+Length quartiles 25%, 50%, and 75% show in certain years anglers harvested more fish closer in length to the upper slot limit and other years more fish closer in length to the low slot limit (Figure `r fcn()`). This might indicate a year class (or classes) growing into and out of the slot limit (102-152 cm FL or 40-60 in FL).
+
+```{r plot-wstk-len-med}
+
+# 14-Apr-2020: will go with percentile plot here to show median & 25% + 75%;
+# increase in median length then a decrease
+
+par(
+  oma = c(0.5, 0.75, 0.25, 0.25),
+  mar = c(2, 2.75, 0.25, 0.25)
+)
+
+p_wstk_len <- Plot(
+  x = range(catch[["Year"]]),
+  y = range(catch[["WSTkLenQuant"]])
+)
+
+p_wstk_len$grid(xRng = TRUE)
+
+rect(
+  xleft = catch[["Year"]] - 0.25,
+  ybottom = catch[["WSTkLenQuant"]][, "p25"],
+  xright = catch[["Year"]] + 0.25,
+  ytop = catch[["WSTkLenQuant"]][, "p75"],
+  col = "transparent",
+  # density = NA,
+  border = "orange2",
+  lwd = 2
+)
+
+points(
+  x = catch[["Year"]],
+  y = catch[["WSTkLenQuant"]][, "p50"],
+  pch = 4,
+  lwd = 2,
+  col = "orange2"
+)
+
+Axis(p_wstk_len, side = 1, labelAdj = 0.3, interval = 2)
+Axis(p_wstk_len, side = 2, labelAdj = 0.4)
+
+mtext(text = "Year", side = 1, line = 1.3)
+mtext(text = "Fork length (cm)", side = 2, line = 2.1)
+
+```
+
+*`r eval(figures[[5]])`*
+
+```{r plot-len-wstk-mean, eval=FALSE}
+
+# possible plot below but likely going with box plot above - might be easier to
+# explain & may be a bit more informative than mean +/- SD (14-Apr-2020)
+
+p_wstk_len <- Plot(
+  x = catch[["Year"]],
+  y = catch[["WSTkLenStats"]][, "Avg"],
+  yerr = sqrt(catch[["WSTkLenStats"]][, "Var"]),
+  adjUsr = 0.5
+)
+
+p_wstk_len$grid(xRng = TRUE)
+
+lines(p_wstk_len, col = "grey25", lwd = 1.5)
+points(
+  p_wstk_len,
+  cex = 1.25,
+  col = "white",
+  pch = 21,
+  bg = "grey25",
+  grid = FALSE
+)
+
+points(
+  x = p_wstk_len$data()[["x"]],
+  y = catch[["WSTkLenStats"]][, "Med"],
+  pch = 4,
+  lwd = 2,
+  col = "orange2"
+)
+
+```
+
+```{r len-freq-old, eval=FALSE, warning=FALSE}
+
+# plot(Frequency(Card$AnglerCatch$FL_cm, binWidth = 5))
+
+# test <- aggregate(
+#   formula = FL_cm ~ Year + Species + Fate,
+#   data = Card[["AnglerCatch"]],
+#   # FUN = function(x) unlist(Frequency(x, binWidth = 5)),
+#   FUN = Frequency,
+#   binWidth = 5,
+#   subset = !(Species %in% "Unk")
+# )
+# 
+# test <- lapply(
+#   split(Card$AnglerCatch$FL_cm, f = Card$AnglerCatch$Year),
+#   FUN = Frequency,
+#   binWidth = 5
+# )
+
+# loop through lf for species+fate combo
+freq_stu <- vapply(lst_stu, FUN = function(x) {
+  
+  d <- subset(
+    Card[["AnglerCatch"]],
+    subset = Species %in% x[1] & Fate %in% x[2]
+  )
+  
+  # not in love with this but for now it'll work, 'kept' has fish will beyond
+  # the legal ranges, so this is an attempt to scale to within (somewhat) of
+  # legal range so plot is not full of white space left & right of bars
+  if (x[2] %in% "kept")
+    d <- subset(d, subset = FL_cm >= 100 & FL_cm <= 155)
+  
+  xrng <- range(d[["FL_cm"]], na.rm = TRUE)
+  
+  s <- split(d[["FL_cm"]], f = d[["Year"]])
+  
+  lapply(s, FUN = Frequency, binWidth = 5, xRange = xrng)
+  
+}, FUN.VALUE = as.list(years))
+
+# combine output with years for ease of other analytics & plotting
+freq <- data.frame(Year = years, freq_stu[, names(lst_stu)])
+
+# clean up
+rm(freq_stu)
+
+```
+
+```{r plot-len_freq, eval=FALSE, fig.height=8, fig.width=6}
+
+# could delete after 09-Apr-2020
+
+# TODO:
+# (1) "un-hardcode" creation of layout matrix
+# (2) use `wstk_lf_plots` output in creation of y-axis title
+# (3) use `max_den` as arg to Map function paramter, not inside function
+
+# establish matrix for plot layout
+
+# using data to create matrix; will always have 3 columns
+clms <- 3L
+rows <- ceiling(nrow(freq) / clms)
+mat_data <- (1:nrow(freq))[1:(rows * clms)]
+
+# layout cannot have NA values
+mat_data[is.na(mat_data)] <- 0
+
+# creat the layout for plotting
+mat_layout <- matrix(data = mat_data, nrow = rows, ncol = clms, byrow = TRUE)
+nf <- layout(mat = mat_layout)
+
+# to put x-axis ticks on bottom three plots
+max_mat_layout <- sort(mat_layout, decreasing = TRUE)[clms:1]
+
+# remove 0s (if any) for proper sorting in next steps
+mat_layout[mat_layout == 0] <- NA_integer_
+
+# uncomment to show layout as grid with number in each cell
+# layout.show(nf)
+
+# for adding ticks & tick labels to appropriate plots in trellis layout
+ytl <- sort(mat_layout) %in% mat_layout[, 1]
+# xtl <- sort(mat_layout) %in% mat_layout[nrow(mat_layout), ]
+xtl <- sort(mat_layout) %in% max_mat_layout
+
+# for consistent y-axis limits between years
+max_den <- vapply(freq[["WSTk"]], FUN = function(x) {
+  max(x[["density"]])
+}, FUN.VALUE = numeric(1L), USE.NAMES = FALSE)
+
+# for keeping bottom & left spaces to display axes title
+par(oma = c(4, 5, 1, 1), cex.axis = 1.5, family = "sans")
+
+# use `freq` to create annaul plots & arrange 3 x 4
+wstk_lf_plots <- Map(function(fd, lbl, x, y) {
+  
+  par(mar = c(0.1, 0.5, 1.5, 0.1), mgp = c(1, 0.5, 0))
+  
+  plot(
+    fd,
+    med = TRUE,
+    xTL = x,
+    yTL = y,
+    xTitle = FALSE,
+    yTitle = FALSE,
+    addN = FALSE,
+    maxY = max(max_den)
+  )
+  
+  mtext(
+    text = bquote(n == .(fd$xstats()[["N"]]) ~ " | " ~ .(lbl)),
+    side = 3,
+    # cex = 0.75,
+    adj = 0,
+    family = "sans", # for Arial
+    ps = 10
+  )
+  
+  # output goes here
+  
+}, freq[["WSTk"]], names(freq[["WSTk"]]), xtl, ytl)
+
+# reset for adding axes title below
+layout(mat = 1)
+
+# y-axis title
+mtext(
+  text = expression(paste("Density x ", 10^-2)),
+  side = 2,
+  # adj = 0.5,
+  # padj = 0.25,
+  line = 3,
+  las = 3
+)
+
+# x-axis title
+mtext(text = "Length bins (cm FL)", side = 1, line = 2.5, las = 1)
+
+```
+
+```{r plots-wstk, eval=FALSE}
+
+# possible plot ideas
+
+boxplot(
+  formula = FL_cm ~ Year,
+  data = Card$AnglerCatch,
+  subset = Species %in% "White" &
+    Fate %in% "kept" & FL_cm %in% 90:160
+)
+
+```
+
+## Catch by Location & Month
+
+Card data make possible some spatial and temporal analyses. Though spatially the data are coarse, limited to larger geographic sections and not specific way-points. This section explores such analytics for all White Sturgeon (kept & released).  
+
+#### Location: Ranking Top 5 for White Sturgeon
+
+Suisun Bay (code 18) consistently yields the greatest fraction of White Sturgeon catch, 2008 excepted (Table `r tcn()`; 20%-40%). In fact, Suisun Bay is typically 5+ points higher than the second-ranked location. Sacramento River: Rio Vista to Chipps Island (code 04) is also a top spot for White Sturgeon catch (Table `r tcn()`).
+
+*`r eval(tables[[6]])`*
+```{r disp-loc-top5}
+
+knitr::kable(
+  catch[["LocWSTTop5"]],
+  format = "markdown",
+  row.names = TRUE,
+  col.names = c(
+    "First", "Second", "Third",
+    "Fourth", "Fifth"
+  )
+)
+
+```
+
+#### Month: White Sturgeon
+
+Though the White Sturgeon fishery is open year-round, there appears to be a natural seasonality (Table `r tcn()`). Catch as a fraction of total caught is lowest late spring through summer (Table `r tcn()`). Unlike location, no single month stands out as exceptional; winter and spring months hover around 15%.
+
+*`r eval(tables[[7]])`*
+```{r disp-catch-wst-mon}
+
+# numbers are percent of total WST catch
+
+knitr::kable(
+  t(vapply(catch[["PerMonth"]], FUN = function(d) {
+    r <- prop.table(d[2:13, "White"]) * 100
+    names(r) <- month.abb
+    r
+  }, FUN.VALUE = numeric(12L))),
+  format = "markdown",
+  digits = 1,
+  row.names = TRUE
+)
+
+```
+
+```{r wst-all-months-all-years}
+
+wst_all_months <- Reduce(f = intersect, x = catch[["LocsYrRndWST"]])
+wst_all_months_loc_nums <- which(loc_lvls %in% wst_all_months)
+
+wst_all_months_narrative <- paste0(
+  sprintf(fmt = "%s(%s)", wst_all_months, wst_all_months_loc_nums),
+  collapse = "; "
+)
+
+```
+
+```{r wst-max-catch-loc-month-narrative}
+
+i <- which.max(catch[["WSTMonthLocMax"]][["Freq"]])
+
+wst_max_catch_loc_month_narrative <- sprintf(
+  fmt = "%s %s at location %s(%s), n=%s",
+  month.abb[as.numeric(catch[["WSTMonthLocMax"]][i, "Month"])],
+  dimnames(catch[["WSTMonthLocMax"]])[[1]][i],
+  catch[["WSTMonthLocMax"]][i, "LocCode"],
+  catch[["WSTMonthLocMax"]][i, "LocNum"],
+  catch[["WSTMonthLocMax"]][i, "Freq"]
+)
+
+# section clean up
+rm(i)
+
+```
+
+Anglers have reported catching one or more White Sturgeon each month every year for the following locations: `r wst_all_months_narrative` (Figure `r fcn()`; y-axis is number in parentheses - see section *Card Location Code* for y-axis number & corresponding Card code). To date, the highest White Sturgeon catch was observed `r wst_max_catch_loc_month_narrative`.
+
+```{r plot-wst-loc-month, fig.width=6, fig.asp=1.5}
+
+# for proper ordering of plots & layout; a `0` does not plot so `n + 1` will be
+# the last plot
+n <- length(catch[["Year"]])
+ncols <- 3
+nrows <- ceiling(n / ncols)
+lvls <- seq_len(ncols * nrows)
+lvls[lvls > n] <- 0
+mat <- matrix(data = lvls, nrow = nrows, ncol = ncols, byrow = TRUE)
+
+par(oma = c(3, 3, 0.5, 0.75))
+
+lo <- layout(mat = rbind(n + 1, mat), heights = c(0.5, 1))
+# layout.show(n = lo)
+
+p_wst_loc_month <- Map(f = function(d, y) {
+  
+  par(mar = c(0.25, 0.25, 1, 0.25))
+  
+  p <- Plot(
+    x = range(d[["X"]]),
+    y = range(d[["Y"]]),
+    adjUsr = 1
+  )
+  
+  rect(
+    xleft = d[["X"]] - 0.5,
+    ybottom = d[["Y"]] - 0.5 ,
+    xright = d[["X"]] + 0.5,
+    ytop = d[["Y"]] + 0.5,
+    col = d[["clrs"]],
+    border = NA
+  )
+  # p$usr
+  
+  if (y %% 3 == 0) {
+    
+    par(mgp = c(3, 0.4, 0))
+    
+    tk <- unique(d[["Y"]])
+    
+    axis(
+      side = 2,
+      at = tk,
+      labels = NA,
+      tcl = -0.1,
+      col = "transparent",
+      col.ticks = "grey50",
+      col.axis = "grey50"
+    )
+    axis(
+      side = 2,
+      at = tk[tk %% 5 == 0],
+      labels = tk[tk %% 5 == 0],
+      tcl = -0.3,
+      col = "transparent",
+      col.ticks = "grey50",
+      col.axis = "grey50",
+      las = 1
+    )
+    # Axis(p, side = 2, labelAdj = 0.4, interval = 2)
+  }
+  
+  axis(
+    side = 1,
+    at = unique(d[["X"]]),
+    labels = NA,
+    tcl = -0.1,
+    col = "transparent",
+    col.ticks = "grey50",
+    col.axis = "grey50"
+  )
+  
+  # note: using this approach works for now but as current calendar year data
+  # come online this may not produce the desired results (17-Apr-2020)
+  if (y >= (current_card_year - 2))
+    Axis(p, side = 1, labelAdj = 0.3)
+  
+  mtext(
+    text = y,
+    side = 3,
+    line = 0,
+    adj = 1,
+    cex = 0.75,
+    col = "grey30",
+    font = 3 # italics
+  )
+  
+  out <- d[c("bins", "clrs")]
+  out[!duplicated(out), ]
+  
+}, catch[["MonthLocWST"]], catch[["Year"]])
+
+# for tile (heatmap) legend
+bins_clrs <- do.call(what = rbind, args = p_wst_loc_month)
+bins_clrs <- bins_clrs[!duplicated(bins_clrs), ]
+bins_clrs <- bins_clrs[order(bins_clrs[["bins"]]), ]
+
+clrs_mon_loc_wst <- subset(
+  bins_clrs,
+  subset = !clrs %in% "grey75",
+  select = clrs,
+  drop = TRUE
+)
+
+clrs_count <- length(clrs_mon_loc_wst)
+
+bins_mon_loc_wst <- seq(
+  from = 0,
+  to = max_bin_mon_loc_wst,
+  length.out = clrs_count
+)
+
+par(mar = c(1.5, 1.5, 3.5, 2.5))
+
+p_clr_bar <- Plot(
+  x = bins_mon_loc_wst,
+  y = rep(1, times = clrs_count),
+  adjUsr = 0.05
+)
+
+p_clr_bar$grid(xRng = TRUE)
+
+Axis(p_clr_bar, side = 3, labelAdj = 0.3, interval = 75)
+mtext(text = "catch - color bar", side = 3, line = 2, cex = 0.75, font = 3)
+mtext(
+  text = "grey = NA",
+  side = 3,
+  line = 2,
+  adj = 0,
+  col = "grey50",
+  cex = 0.75,
+  font = 3 # italic
+)
+
+segments(
+  x0 = bins_mon_loc_wst[-clrs_count],
+  x1 = c(1, bins_mon_loc_wst[-(1:2)]),
+  y0 = 1,
+  col = clrs_mon_loc_wst,
+  lwd = 100,
+  lend = 1
+)
+
+# reset for adding axes label
+lo <- layout(mat = 1)
+# layout.show(lo)
+par(oma = c(1, 1, 0.5, 0.75), mar = c(0.25, 0.25, 1, 0.25), bg = "white")
+
+mtext(text = "Location (number)", side = 2, line = -0.05, outer = TRUE)
+mtext(text = "Month (Jan-Dec)", side = 1, line = -0.5)
+
+# chunk clean up
+rm(
+  n, ncols, nrows, lvls, mat, lo,
+  bins_clrs, clrs_count, bins_mon_loc_wst,
+  p_clr_bar, clrs_mon_loc_wst
+)
+
+```
+
+*`r eval(figures[[6]])`*
+
+## Angler Tag Returns
+
+```{r tags-digits-only}
+
+# count number of tags reported as digits only (either not enough or too many to
+# make a positve match or educated guess); coded here for narrative below
+tags_digits_only <- sum(catch[["DiscSummary"]][, "someDigits"])
+
+# below counts number of years in which an angler caught & reported > 1 tag (may
+# be interesting but won't use right now - 15-Apr-2020)
+
+# sum(catch[["DiscSummary"]][, "nAngTwoPlusTags"] > 0)
+
+```
+
+In 2010, CDFW added a field for reporting the disc tag number, if present. Some anglers recorded such information starting in 2009 despite such field's absence (Table `r tcn()`). Ideally, an angler should report the entire alpha-numeric (e.g.,  HH1234). The prefix denotes the reward value (e.g., 'HH' = \$100). A complete tag number makes easier the task of precisely retrieving CDFW release data. Many anglers do their best, but not every reported disc tag is complete (Table `r tcn()`). CDFW staff use angler-reported disc tags to augment mark-recapture data, perhaps improving population metrics accuracy. Table field names are explained below for reference.
+
+- **Anglers**: number of anglers reporting a disc tag or possible disc tag
+- **Good Tag**: count of complete disc tags (angler correctly reported disc tag)
+- **No Prefix**: count of disc tags reported without alpha (i.e., missing prefix); likely a valid disc tag but more sleuthing is required
+- **Prefix 'ST'**: count of disc tags reported as 5-digits, no prefix. CDFW released \$20 disc tags with 'ST' followed by 5 digits. So these are likely \$20 tags but more sleuthing is required.
+- **Reward Only**: count of likely disc tags but no number available. Angler reported reward value only (e.g., \$50.00).
+- **Zip Only**: count of likely disc tags but no number available. Angler reported Stockton zip code (CDFW Stockton address printed opposite side of disc tag number).
+
+To date, anglers have reported `r  tags_digits_only` disc tags as digits only. However, digits are too few or too many to make a positive match with CDFW release data.
+
+*`r eval(tables[[8]])`*
+```{r disp-count-tags}
+
+# to limit fields displayed; !b fields are not needed
+b <- colnames(catch[["DiscSummary"]]) %in% c("someDigits", "nAngTwoPlusTags")
+
+# display (years 2007 & 2008 did not require space for disc tags)
+knitr::kable(
+  catch[["DiscSummary"]][years > 2008, !b],
+  format = "markdown",
+  row.names = TRUE,
+  col.names = c(
+    "Anglers", "Good Tag", "No Prefix",
+    "Prefix 'ST'", "Reward Only", "Zip Code"
+  )
+)
+
+# chunk clean up
+rm(b, tags_digits_only)
+
+```
+
+```{r angler-demo, eval=FALSE} 
+
+# possible angler demographics
+
+with(Card$AldsPurchased, expr = {
+  
+  table(CustomerID, ItemYear) > 0
+  
+})
+
+```
+
+<!-- save files as desired -->
+
+```{r save-annual_sum, eval=FALSE}
+
+write.csv(
+  annual_length,
+  file = "fishery/card_sp_length.csv",
+  row.names = FALSE
+)
+
+write.csv(
+  card_summary,
+  file = "fishery/card_summary.csv",
+  row.names = FALSE,
+  na = ""
+)
+
+write.csv(
+  catch_angler,
+  file = "fishery/catch_angler.csv",
+  row.names = FALSE,
+  na = ""
+)
+
+write.csv(
+  catch_meas,
+  file = "fishery/catch_meas.csv",
+  row.names = FALSE,
+  na = ""
+)
+
+```
+
+## Card Location Codes & Descriptions
+
+Card locations are included below for reference. Field 'Number' is not on printed Card and is merely included here for simplifying y-axis in Figure `r fcn() - 1`. Card codes 2-9 may appear on Card with leading 0 (e.g., 03).
+
+```{r loc-codes}
+
+loc_codes <- read.csv(
+  file = "fishery/annual_card_files/LocationCodes.csv",
+  header = TRUE,
+  stringsAsFactors = FALSE
+)
+
+knitr::kable(
+  loc_codes,
+  format = "markdown",
+  row.names = FALSE,
+  align = c('c', 'c', 'l'),
+  col.names = c("Number", "Card Code", "Card Description")
+)
+
+```
+
+---
+
+CDFW, Sportfish Unit    
+**updated**: `r format(Sys.time(), format = "%d-%b-%Y @ %H:%M")`

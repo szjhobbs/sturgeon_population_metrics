@@ -1,0 +1,759 @@
+---
+
+---
+
+```{r catch}
+
+# chunk splits catch by year for use in annual analytics; helpful & controls the
+# number of dataframes in global environment; will add list columns to `catch`
+# as needed
+
+catch <- Split(
+  data = Card[["AnglerCatch"]],
+  # subset = ,
+  vars = -Year,
+  splitVars = Year
+)
+
+# for desired data type
+catch$Year <- as.numeric(catch[["Year"]])
+
+```
+
+<!-- numbers -->
+
+```{r catch-wst}
+
+# splits by fate (kept or released)
+
+catch$WST <- lapply(catch[["Data"]], FUN = function(d) {
+  
+  s <- Split(
+    data = d,
+    subset = Species %in% "White",
+    vars = Length,
+    splitVars = Fate
+  )
+  
+  t(vapply(s[["Data"]], FUN = function(dd) {
+    l <- dd[["Length"]]
+    r <- is.na(l) | l == 0
+    q <- l > 0 & l <= 10 & !is.na(l)
+    c(Meas = sum(!r), NotMeas = sum(r), Tot = length(l), QL = sum(q))
+    
+  },FUN.VALUE = numeric(4L)))
+  
+})
+
+```
+
+```{r catch-gst}
+
+catch$GST <- t(vapply(catch[["Data"]], FUN = function(d) {
+  
+  b <- d[["Species"]] %in% "Green"
+  
+  l <- d[b, "Length"]
+  r <- is.na(l) | l == 0
+  q <- l > 0 & l <= 10 & !is.na(l)
+  c(Meas = sum(!r), NotMeas = sum(r), Tot = length(l), QL = sum(q))
+  
+}, FUN.VALUE = numeric(4L)))
+
+```
+
+```{r catch-unk}
+
+catch$Unk <- vapply(catch[["Data"]], FUN = function(d) {
+  sum(d[["Species"]] %in% "Unk")
+}, FUN.VALUE = numeric(1L))
+
+```
+
+<!-- length -->
+
+```{r fl-quantiles}
+
+# calculates 25%, 50%, & 75% quantiles for length (fork length in cm); doing it
+# separately by species for ease of using in plots
+
+catch$GSTLenQuant <- t(vapply(catch[["Data"]], FUN = function(d) {
+  
+  p <- c(p25 = 0.25, p50 = 0.50, p75 = 0.75)
+  b <- d[["Species"]] %in% "Green"
+  
+  o <- quantile(
+    d[b, "FL_cm"],
+    probs = p,
+    na.rm = TRUE,
+    names = FALSE
+  )
+  
+  names(o) <- names(p)
+  o
+  
+}, FUN.VALUE = numeric(3L)))
+
+catch$WSTrLenQuant <- t(vapply(catch[["Data"]], FUN = function(d) {
+  
+  p <- c(p25 = 0.25, p50 = 0.50, p75 = 0.75)
+  b <- d[["Species"]] %in% "White" &
+    d[["Fate"]] %in% "released"
+  
+  o <- quantile(
+    d[b, "FL_cm"],
+    probs = p,
+    na.rm = TRUE,
+    names = FALSE
+  )
+  
+  names(o) <- names(p)
+  o
+  
+}, FUN.VALUE = numeric(3L)))
+
+catch$WSTkLenQuant <- t(vapply(catch[["Data"]], FUN = function(d) {
+  
+  p <- c(p25 = 0.25, p50 = 0.50, p75 = 0.75)
+  b <- d[["Species"]] %in% "White" &
+    d[["Fate"]] %in% "kept"
+  
+  o <- quantile(
+    d[b, "FL_cm"],
+    probs = p,
+    na.rm = TRUE,
+    names = FALSE
+  )
+  
+  names(o) <- names(p)
+  o
+  
+}, FUN.VALUE = numeric(3L)))
+
+```
+
+```{r fl-wstk, warning=FALSE}
+
+# TODO: for kept WST (09-Apr-2020) but may add for GST & WSTr
+
+catch$WSTkLenStats <- t(vapply(catch[["Data"]], FUN = function(d) {
+  b <- d[["Species"]] %in% "White" &
+    d[["Fate"]] %in% "kept"
+  unlist(DescStat(d[b, "FL_cm"]))
+}, FUN.VALUE = numeric(7L)))
+
+```
+
+```{r len-in-queston}
+
+catch$LenCheck <- t(vapply(catch[["Data"]], FUN = function(d) {
+  p <- c("White", "Green")
+  s <- factor(d[["Species"]], levels = p, exclude = "Unk")
+  l <- split(d[["Length"]], f = s)
+  vapply(l, FUN = function(x) {
+    sum(x > 0 & x <= 10 & !is.na(x))
+  }, FUN.VALUE = numeric(1L))
+}, FUN.VALUE = numeric(2L)))
+
+```
+
+<!-- length frequency -->
+
+```{r len-freq}
+
+```
+
+```{r plot-lf-test, eval=FALSE}
+
+# TODO: for now (13-Jun-2019) not going to use this plot but herein has
+# potential for creating a 'time series' of histograms, which might be useful
+# for observing trends or patterns with len-freq distributions; process herein
+# --- like most other chunks herein --- would benefit from a custom function or
+# functions written within sportfish package
+
+# source(file = "presentations/.base-par.R")
+par(
+  # mar = c(5, 6, 1, 1),
+  cex.axis = 1.5,
+  cex.lab = 1.5,
+  col.axis = "grey40",
+  col.lab = "black",
+  las = 1,
+  bty = "n",
+  # mgp = c(3, 0.75, 0),
+  tcl = -0.3,
+  lend = 2
+)
+
+
+# nf <- layout(mat = matrix(data = 1:12, nrow = 4, ncol = 3, byrow = TRUE))
+nf <- layout(
+  mat = matrix(data = 1:12, nrow = 1, ncol = 12, byrow = TRUE),
+  widths = 1,
+  heights = 1
+)
+# layout.show(nf)
+
+# Map(plot, freq$GST, xlab = "")
+
+# use xlim in hist() to get consistent x-axis over all years
+# 07-May-2019
+
+max_den <- vapply(freq[["WSTr"]], FUN = function(x) {
+  max(x[["density"]])
+}, FUN.VALUE = numeric(1L), USE.NAMES = FALSE)
+
+par(oma = c(4, 5, 1, 1))
+
+# lapply(freq[["WSTr"]], FUN = function(fd) {
+#   
+#   # par(mai = c(0.1, 0.1, 0.1, 0.1))
+#   # par(mgp = c(1, 0.5, 0))
+#   par(mar = c(0.1, 0.1, 0.1, 0.1), mgp = c(1, 0.5, 0))
+#   
+#   # plot(fd, xlab = "", xaxt = "n")
+#   
+#   # do.call(rbind, fd)
+#   # fd
+#   
+#   med <- fd$xstats()[["Med"]]
+#   mult <- 1000
+#   
+#   plot(
+#     fd$density,
+#     fd$mids,
+#     type = "s",
+#     yaxt = "n",
+#     xaxt = "n",
+#     # main = "2007",
+#     xlim = c(0, max(max_den)),
+#     panel.first = abline(h = med, col = 2),
+#     # xlab = expression(paste("Density x", 1e-3))
+#   ) #, 
+#   
+#   # list(Dens = range(fd$density), Mids = range(fd$mids))
+#   xtck <- axTicks(side = 1)
+#   axis(side = 1, at = xtck[c(T, F)], labels = (xtck * mult)[c(T, F)])
+#   axis(side = 1, at = xtck, labels = NA)
+#   mtext(text = "2007", side = 3, cex = 0.75)
+#   
+#   # xtck
+# })
+
+test <- Map(function(fd, lbl, y) {
+  
+  # par(mai = c(0.1, 0.1, 0.1, 0.1))
+  # par(mgp = c(1, 0.5, 0))
+  par(mar = c(0.1, 0.1, 0.1, 0.1), mgp = c(1, 0.5, 0))
+  
+  # plot(fd, xlab = "", xaxt = "n")
+  
+  # do.call(rbind, fd)
+  # fd
+  
+  med <- fd$xstats()[["Med"]]
+  mult <- 1000
+  
+  tp <- "n"
+  
+  if (y) tp <- "s"
+  
+  plot(
+    fd$density,
+    fd$mids,
+    type = "s",
+    lwd = 1.5,
+    col = "steelblue",
+    yaxt = "n",
+    xaxt = "n",
+    # main = "2007",
+    xlim = c(0, max(max_den)),
+    # panel.first = abline(h = med, col = 2)
+    panel.first = grid(lwd = 1000, col = "grey90")
+    # xlab = expression(paste("Density x", 1e-3))
+  ) #, 
+  
+  abline(
+    h = med,
+    col = rgb(red = 0.4, green = 0.1, blue = 0.1, alpha = 0.4),
+    lwd =2
+  )
+  
+  if (y)
+    axis(
+      side = 2,
+      at = axTicks(side = 2),
+      labels = axTicks(side = 2),
+      col = "transparent",
+      col.ticks = "black"
+    )
+  
+  # list(Dens = range(fd$density), Mids = range(fd$mids))
+  xtck <- axTicks(side = 1)
+  axis(
+    side = 1,
+    at = xtck[c(T, F)],
+    labels = (xtck * mult)[c(T, F)],
+    col = "transparent",
+    col.ticks = "black"
+  )
+  axis(
+    side = 1,
+    at = xtck,
+    labels = NA,
+    col = "transparent",
+    col.ticks = "black"
+  )
+  
+  mtext(text = lbl, side = 3, cex = 0.75)
+  
+  invisible(med)
+  
+}, freq[["WSTr"]], names(freq[["WSTr"]]), c(T, rep(F, times = 11)))
+
+# par(mar = c(5.1, 4.1, 4.1, 2.1))
+layout(mat = 1)
+
+mtext(
+  text = expression(paste("Density x", 10^-4)),
+  side = 1,
+  adj = 0.5,
+  padj = 0.25,
+  line = 2.5
+)
+
+mtext(text = "Bins", side = 2, line = 4, las = 3)
+
+# freq$GST$`2007`$xstats()[["Med"]]
+
+# plot(freq$GST$`2007`, ylim = c(0, .1), xaxt = "n")
+# # par()$mgp
+# 
+# plot(freq$WSTr$`2007`$density, freq$WSTr$`2007`$mids, type = "s")
+# abline(h = 100, col = 2)
+
+```
+
+<!-- per angler -->
+
+```{r catch-per-angler}
+
+# chunk creats dataframe of WST recorded (either kept or released) per each
+# angler; also adds max recorded by angler
+
+catch$PerAngler <- lapply(catch[["Data"]], FUN = function(d) {
+  
+  aggregate(
+    d[["Species"]],
+    by = d["AnglerID"],
+    FUN = function(x) sum(x %in% "White")
+  )
+  
+})
+
+catch$MaxWSTPerAngler <- vapply(
+  catch[["PerAngler"]],
+  FUN = function(d) max(d[["x"]]),
+  FUN.VALUE = numeric(1L)
+)
+
+```
+
+```{r catch-max-gst-per-angler}
+
+# chunk creats dataframe of WST recorded (either kept or released) per each
+# angler; also adds max recorded by angler
+
+catch$MaxGSTPerAngler <- vapply(catch[["Data"]], FUN = function(d) {
+  
+  g <- aggregate(
+    d[["Species"]],
+    by = d["AnglerID"],
+    FUN = function(x) sum(x %in% "Green")
+  )
+  
+  max(g[["x"]])
+  
+}, FUN.VALUE = numeric(1L))
+
+```
+
+```{r catch-per-angler-binned}
+
+# chunk creates table based on catch per angler bins by 1 (e.g., 1-2; 3-4) until
+# 14, then last bin is 15+ (can rescale if needed but this is good for now)
+
+catch$PerAnglerBinned <- t(vapply(catch[["PerAngler"]], FUN = function(d) {
+  
+  brks <- c(seq(from = 1, to = 15, by = 2), Inf)
+  lbls <- paste(brks, brks + 1, sep = "-")
+  lbls <- c(lbls[1:7], "15+")
+  
+  bins <- cut(
+    d[["x"]],
+    breaks = brks,
+    labels = lbls,
+    include.lowest = FALSE,
+    right = FALSE
+  )
+  
+  table(bins)
+  
+}, FUN.VALUE = numeric(8L)))
+
+```
+
+<!-- per month -->
+
+```{r catch-per-month}
+
+# chunk adds catch-per-month to catch dataframe
+
+catch$PerMonth <- lapply(catch[["Data"]], FUN = function(d) {
+  
+  l <- sub(pattern = " ", replacement = 0, format(1:12))
+  
+  # ng = not given
+  m <- factor(
+    d[["Month"]],
+    levels = c(NA, l),
+    labels = c("ng", l),
+    exclude = NULL
+  )
+  
+  s <- factor(d[["Species"]], levels = c("White", "Green", "Unk"))
+  
+  mm <- split(m, f = s)
+  
+  vapply(mm, FUN = table, FUN.VALUE = numeric(13L))
+  
+})
+
+```
+
+<!-- per month & location -->
+
+```{r catch-table-mon-loc-wst}
+
+# creates a frequency table to catch max catch overall used to bin catch in next
+# step for producing heat map (15-Apr-2020)
+catch$TbMonLocWST <- lapply(catch[["Data"]], FUN = function(d, lvl = loc_lvls) {
+  
+  b <- d[["Species"]] %in% "White" #&
+    # d[["Fate"]] %in% "released"
+  
+  m <- factor(d[b, "Month"], levels = c(paste0(0, 1:9), 10:12))
+  l <- factor(d[b, "LocCode"], levels = lvl, exclude = "unk")
+  
+  # to get frequency
+  table(l, m, dnn = NULL)
+  
+})
+
+max_catch_mon_loc_wst <- vapply(
+  catch[["TbMonLocWST"]],
+  FUN = max,
+  FUN.VALUE = numeric(1L)
+)
+
+# ******************************************************************************
+# possible programming for getting upper value for binning but not needed now
+# 15-Apr-2020
+# any(nchar(max_catch_mon_loc_wst) > 3)
+# nchar(max_catch_mon_loc_wst)
+# if (!all(nchar(max_catch_mon_loc_wst) == 3)) {
+#   stop("`max_catch_mon_loc_wst`", call. = FALSE)
+# }
+# ******************************************************************************
+
+# for sequence in color breaks used in next chunk
+max_bin_mon_loc_wst <- max(ceiling(max_catch_mon_loc_wst / 100) * 100)
+
+```
+
+```{r locs-year-round-wst}
+
+# locatation with year-round WST catch
+
+catch$LocsYrRndWST <- lapply(catch[["TbMonLocWST"]], FUN = function(d) {
+  v <- rowSums(d > 0)
+  b <- v %in% 12
+  sort(names(v[b]))
+})
+
+# to check which locations appear every year
+# Reduce(f = intersect, x = catch[["LocsYrRndWST"]])
+# sort(table(unlist(catch[["LocsYrRndWST"]])), decreasing = TRUE)
+
+```
+
+```{r catch-month-loc-wst}
+
+# process
+# (1) subset by species (if White, then kept or released)
+# (2) factor months for proper ordering & inclusion on every year
+# (3) factor location code 1A, 1B, 1C from 2010 on, 1 not used after 2009
+# (4) exclude "unk" from location, but include count per year
+# (5) because each line in catch data is a single fish, get frequency
+#     per location & month, and then bin frequency into no more than 10 bins
+# (6) converting step 5 to dataframe might be cumbersome but it might be the
+#     most convenient in terms of plotting heat map
+# (7) at any rate will need to create fields for bins, and then alpha for
+#     transparency in rgb() - use steelblue color
+# (8) bin starting with 0, and then set 0 color to white or grey99 or...
+# (9) plot each year with location on y-axis & month on x-axis
+
+# table(Card[["AnglerCatch"]][c("LocCode", "Year")])
+
+catch$MonthLocWST <- Map(f = function(r, y, maxBin = max_bin_mon_loc_wst) {
+  
+  # already done in previous chunk
+  # b <- d[["Species"]] %in% "White" #&
+  #   # d[["Fate"]] %in% "released"
+  # 
+  # m <- factor(d[b, "Month"], levels = c(paste0(0, 1:9), 10:12))
+  # l <- factor(d[b, "LocCode"], levels = lvl, exclude = "unk")
+  # 
+  # # to get frequency
+  # r <- table(l, m, dnn = NULL)
+  
+  # return(max(r))
+  
+  r <- as.data.frame(r, stringsAsFactors = TRUE)
+  r$X <- as.numeric(as.character(r[["Var2"]]))
+  r$Y <- unclass(r[["Var1"]])
+  
+  # bin frequency for color in plot
+  brks <- seq(from = 0, to = maxBin, length.out = 9)
+  r$bins <- cut(r[["Freq"]], breaks = brks, right = FALSE)
+  r$clrs <- rgb(
+    red = 0.27,
+    green = 0.50,
+    blue = 0.70,
+    alpha = as.numeric(r[["bins"]]) / 10
+  )
+  
+  # r$clrs[r[["Freq"]] %in% 0] <- "grey99"
+  r$clrs[r[["Freq"]] %in% 0] <- rgb(
+    red = 0.99,
+    green = 0.54,
+    blue = 0,
+    alpha = 0.3
+  )
+  
+  # clr_na <- rgb(red = 0.99, green = 0.54, blue = 0, alpha = 0.2)
+  clr_na <- "grey75"
+  
+  if (y < 2010)
+    r$clrs[r[["Var1"]] %in% paste0("01", LETTERS[1:3])] <- clr_na
+  else
+    r$clrs[r[["Var1"]] %in% "01"] <- clr_na
+  
+  r
+  
+}, catch[["TbMonLocWST"]], catch[["Year"]])
+# end Map
+
+```
+
+```{r wst-month-loc-max-year}
+
+# gets maximum catch per year by location & month
+
+catch$WSTMonthLocMax <- t(vapply(catch[["MonthLocWST"]], FUN = function(d) {
+  i <- which.max(d[["Freq"]])
+  m <- as.character(d[i, "Var2"])
+  l <- as.character(d[i, "Var1"])
+  lc <- as.integer(d[i, "Var1"])
+  list(Month = m, LocCode = l, LocNum = lc, Freq = d[i, "Freq"])
+}, FUN.VALUE = as.list(1:4)))
+
+# for ease of extracting data (e.g., max frequency)
+catch$WSTMonthLocMax <- as.data.frame(catch$WSTMonthLocMax)
+catch$WSTMonthLocMax[] <- lapply(catch$WSTMonthLocMax, FUN = unlist)
+
+```
+
+<!-- per location by species -->
+
+```{r catch-loc-species, warning=FALSE}
+
+# like tables 5-7 in old report: getting angler count & total catch per location
+# along with number measures & some length stats; might be a neater way to do
+# this but for now this should work (07-Apr-2020)
+
+# green sturgeon
+catch$LocGST <- lapply(catch[["Data"]], FUN = function(d, lvl = loc_lvls) {
+  
+  d$LocCodeF <- factor(d[["LocCode"]], levels = lvl)
+  
+  s <- Split(
+    data = d,
+    subset = Species %in% "Green",
+    # vars = ,
+    splitVars = LocCodeF,
+    drop = FALSE
+  )
+  
+  out <- vapply(s[["Data"]], FUN = function(dd) {
+    a <- length(unique(dd[["AnglerID"]]))
+    n <- nrow(dd)
+    l <- DescStat(dd[["FL_cm"]])
+    c(
+      NumAnglers = a,
+      TotalCatch = n,
+      NumMeas = l[["N"]],
+      MeanLen = l[["Avg"]],
+      SDLen = sqrt(l[["Var"]])
+    )
+  }, FUN.VALUE = numeric(5L))
+  
+  t(out)
+  
+})
+
+# white sturgeon kept
+catch$LocWSTk <- lapply(catch[["Data"]], FUN = function(d, lvl = loc_lvls) {
+  
+  d$LocCodeF <- factor(d[["LocCode"]], levels = lvl)
+  
+  s <- Split(
+    data = d,
+    subset = Species %in% "White" &
+      Fate %in% "kept",
+    # vars = ,
+    splitVars = LocCodeF,
+    drop = FALSE
+  )
+  
+  out <- vapply(s[["Data"]], FUN = function(dd) {
+    a <- length(unique(dd[["AnglerID"]]))
+    n <- nrow(dd)
+    l <- DescStat(dd[["FL_cm"]])
+    c(
+      NumAnglers = a,
+      TotalCatch = n,
+      NumMeas = l[["N"]],
+      MeanLen = l[["Avg"]],
+      SDLen = sqrt(l[["Var"]])
+    )
+  }, FUN.VALUE = numeric(5L))
+  
+  t(out)
+  
+})
+
+# white sturgeon released
+catch$LocWSTr <- lapply(catch[["Data"]], FUN = function(d, lvl = loc_lvls) {
+  
+  d$LocCodeF <- factor(d[["LocCode"]], levels = lvl)
+  
+  s <- Split(
+    data = d,
+    subset = Species %in% "White" &
+      Fate %in% "released",
+    # vars = ,
+    splitVars = LocCodeF,
+    drop = FALSE
+  )
+  
+  out <- vapply(s[["Data"]], FUN = function(dd) {
+    a <- length(unique(dd[["AnglerID"]]))
+    n <- nrow(dd)
+    l <- DescStat(dd[["FL_cm"]])
+    c(
+      NumAnglers = a,
+      TotalCatch = n,
+      NumMeas = l[["N"]],
+      MeanLen = l[["Avg"]],
+      SDLen = sqrt(l[["Var"]])
+    )
+  }, FUN.VALUE = numeric(5L))
+  
+  t(out)
+  
+})
+
+```
+
+<!-- top 5 WST catch location -->
+
+```{r catch-loc-wst}
+
+# provides a top 5 ranking by location of percent of total WST catch
+
+catch$LocWSTTop5 <- t(vapply(catch[["Data"]], FUN = function(d) {
+  b <- d[["Species"]] %in% "White"
+  # res <- sort(table(d[b, "LocCode"]), decreasing = TRUE)[1:5]
+  res <- prop.table(table(d[b, "LocCode"]))
+  res <- sort(res, decreasing = TRUE)[1:5]
+  sprintf(fmt = "%s (%.0f)", names(res), res * 100)
+}, FUN.VALUE = character(5L)))
+
+```
+
+```{r catch-loc-sorted, eval=FALSE}
+
+# an idea for output not run currently (09-Apr-2020) but used in previous
+# reports, may resurrect at some point
+
+catch_loc <- aggregate(
+  formula = LocCode ~ Year,
+  data = Card[["AnglerCatch"]],
+  FUN = function(x) {
+    
+    r <- table(x, dnn = NULL)
+    b <- r <= 50
+    
+    res <- c(sort(r[!b], decreasing = TRUE), AOL = sum(r[b]))
+    
+    list(
+      Count = res,
+      PerTot = res / sum(res),
+      NumAOL = sum(b),
+      LocAOL = names(r)[b],
+      TotCatch = sum(r)
+    )
+  }
+)
+
+```
+
+<!-- rewark disk field summaries -->
+
+```{r catch-disc-check}
+
+catch$DiscFreq <- lapply(catch[["Data"]], FUN = function(d) {
+  table(d[["CheckTag"]][, "Desc"])
+})
+
+```
+
+```{r catch-disk-angler}
+
+lvls_tag_desc <- c(
+  "goodTag", "missingPrefix", "prefixed-ST",
+  "rewardOnly", "zipCodeOnly", "someDigits"
+)
+
+catch$DiscFreqAngler <- lapply(
+  catch[["Data"]],
+  FUN = function(d, lvls = lvls_tag_desc) {
+    b <-  d[["CheckTag"]][, "Desc"] %in% lvls
+    k <- factor(d[b, "CheckTag"][, "Desc"], levels = lvls)
+    table(d[b, "AnglerID"], k, dnn = NULL)
+  }
+)
+
+catch$DiscSummary <- t(vapply(catch[["DiscFreqAngler"]], FUN = function(d) {
+  c(
+    nAnglers = dim(d)[[1]],
+    colSums(d),
+    nAngTwoPlusTags = sum(rowSums(d) > 1)
+  )
+}, FUN.VALUE = numeric(8L)))
+
+# clean up
+rm(lvls_tag_desc)
+
+```

@@ -1,0 +1,279 @@
+---
+
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_knit$set(root.dir = "~/RProjects/SturgeonPopMetrics")
+knitr::opts_chunk$set(echo = FALSE)
+
+```
+
+```{r libraries, warning=FALSE, message=FALSE, echo=FALSE}
+
+# source(file = "~/RSourcedCode/methods_desc_stats.R")
+
+library(dplyr)
+
+```
+
+```{r load-data, echo=FALSE}
+
+SturgeonAlds <- readRDS(file = "data/card/SturgeonAlds.rds")
+Sturgeon0711 <- readRDS(file = "data/card/Sturgeon0711.rds")
+RetCardsAlds <- readRDS(file = "data/card/RetCardsAlds.rds")
+PurCardsAlds <- readRDS(file = "data/card/PurCardsAlds.rds")
+
+count_alds <- nrow(SturgeonAlds)
+count_0711 <- nrow(Sturgeon0711)
+
+# summary(SturgeonAlds)
+# summary(Sturgeon0711)
+
+```
+
+```{r somevars, echo=FALSE}
+
+col_names <- c(
+  "Id", "Year", "Month", "LocCode", "Fate",
+  "Length", "TagNum", "FL_cm", "TL_cm"
+)
+
+
+```
+
+```{r data-subset, echo=FALSE}
+
+# subset data on white stu & prepare for rbind()ing
+
+# usefule for seasonal summary
+Sturgeon0711$Month <- as.numeric(format(Sturgeon0711[["DateOfCapture"]], "%m"))
+
+arch_wst <- subset(
+  Sturgeon0711,
+  subset = Species %in% "White",
+  select = c(
+    CardNum, Year, Month, LocationCode,
+    Fate, Length, TagNum, FL_cm, TL_cm
+  )
+)
+
+colnames(arch_wst) <- col_names
+
+alds_wst <- subset(
+  SturgeonAlds,
+  subset = SturgeonType %in% "White",
+  select = c(
+    CustomerID, ItemYear, Month, LocCode,
+    Fate, Length, RewardDisk, FL_cm, TL_cm
+  )
+)
+
+colnames(alds_wst) <- col_names
+
+
+card <- rbind(arch_wst, alds_wst)
+rm(arch_wst, alds_wst)
+
+```
+
+Summary data about number of White Sturgeon kept and released each year.
+
+```{r}
+
+catch <- aggregate(
+  formula = Id ~ Year + Fate,
+  data = card,
+  FUN = length
+)
+
+catch$Fate <- factor(catch$Fate, levels = c("kept", "released"))
+colnames(catch) <- c("Year", "Fate", "NumOfWst")
+
+anglers <- aggregate(
+  formula = Id ~ Year,
+  data = card,
+  FUN = function(x) length(unique(x))
+)
+
+colnames(anglers) <- c("Year", "NumOfAnglers")
+
+as.data.frame(catch)
+as.data.frame(anglers)
+
+```
+
+Plot of data above.
+
+```{r echo=FALSE}
+
+# plot(Id ~ Year, data = anglers)
+
+par(mar = c(3.5, 4, 1, 4) + 0.1, bty = "u")
+
+plot(
+  x = anglers[["Year"]],
+  y = anglers[["NumOfAnglers"]],
+  type = "h",
+  lwd = 10,
+  lend = 2,
+  col = "grey75",
+  ylim = c(0, max(anglers[["NumOfAnglers"]])),
+  ylab = "Number of anglers (x 1000)",
+  xlab = NA,
+  yaxt = "n",
+  xaxt = "n"
+)
+
+# range(anglers[["Id"]])
+
+axis(
+  side = 2,
+  at = seq(0, 3000, 500),
+  labels = format(seq(0, 3000, 500) / 1000),
+  las = 1
+)
+
+par(new = TRUE)
+
+# catch <- catch[order(catch[["Year"]]), ]
+
+# points(Id ~ Year, data = catch, type = "b", subset = Fate %in% "kept", ylim = c(0, 6000))
+# points(Id ~ Year, data = catch, type = "b", subset = Fate %in% "released", ylim = c(0, 6000))
+
+bool <- catch[["Fate"]] %in% "released"
+
+plot(
+  x = catch[["Year"]],
+  y = catch[["NumOfWst"]],
+  type = "n",
+  # col = as.numeric(catch[["Fate"]]),
+  # lty = as.numeric(catch[["Fate"]]),
+  
+  axes = FALSE,
+  ylab = NA,
+  xlab = NA
+)
+
+# range(catch[["Id"]])
+
+pts <- lapply(c("kept", "released"), FUN = function(x) {
+  
+  color <- c(kept = "steelblue", released = "darkorange")
+  
+  points(
+    formula = NumOfWst ~ Year,
+    data = catch,
+    subset = Fate %in% x,
+    type = "b",
+    col = color[x],
+    cex = 1.1
+  )
+})
+
+
+axis(
+  side = 4,
+  at = seq(1400, 6200, 700),
+  labels = ( seq(1400, 6200, 700)) / 100,
+  las = 2
+  # lwd.ticks = ,
+  # hadj =
+)
+
+mtext(text = "Catch (x 100)", side = 4, line = 2.5)
+mtext(text = "Year", side = 1, line = 2)
+
+axis(
+  side = 1,
+  at = (2007:2017)[(2007:2017) %% 2 == 1],
+  labels = (2007:2017)[(2007:2017) %% 2 == 1],
+  tck = -0.03,
+  padj = -0.5
+  # las = 2
+  # lwd.ticks = 5
+  # hadj =
+)
+
+axis(
+  side = 1,
+  at = 2007:2017,
+  labels = NA,
+  tck = -0.01
+)
+
+legend(#x = 2009,
+       #y = 6300,
+     "topleft",
+    # fill = c("grey75", "steelblue"),
+    col = c("grey75", "steelblue", "darkorange"),
+    pch = c(15, 1, 1),
+    legend = c("anglers", "kept", "released"),
+    pt.cex = 1.5, ncol = 3, box.col = "grey90", border = NA)
+
+
+
+```
+
+Some angler demographics...these data only available from 2012 to present.
+
+Count of cards issued (or purchased beginning 2013) by year and gender along with median age.
+
+```{r angler-info, echo=FALSE}
+
+angler_info <- PurCardsAlds %>% 
+  group_by(ItemYear, Gender = factor(Gender, levels = c('M', 'F'))) %>% 
+  filter(!duplicated(CustomerID) & ItemYear < 2018) %>% 
+  summarise(
+    Count = n(),
+    MeadianAge = median(2018 - BirthYear)
+  )
+  
+as.data.frame(angler_info)
+
+```
+ 
+Fraction of top 5 counties by year. County = where angler resides. Fractions don't vary much annually and majority of sturgeon anglers is local (to the Delta - Estuary).
+
+```{r county-info, echo=FALSE}
+
+# 
+years <- setNames(object = 2012:2017, nm = 2012:2017)
+
+county_info <- vapply(years, FUN = function(y) {
+  
+  d <- PurCardsAlds[PurCardsAlds[["ItemYear"]] %in% y, ]
+  d <- d[!duplicated(d[["CustomerID"]]), ]
+  
+  county <- prop.table(table(d[["County"]], useNA = "ifany"))
+  
+  sort(county, decreasing = TRUE)[1:5]
+  
+}, FUN.VALUE = numeric(5L))
+
+t(county_info)
+
+```
+
+More anglers now appear to be submitting on-line compared to when ALDS came on-line in 2012.
+
+IS = Internet submission (by angler)  
+CC = Control Center (by CDFW staff)
+
+```{r alds-returns, echo=FALSE}
+
+# head(RetCardsAlds)
+# 
+# table(RetCardsAlds[["Code"]], useNA = "ifany")
+# table(RetCardsAlds[["CustomerSourceCode"]], useNA = "ifany")
+
+ret_cards_alds <- RetCardsAlds %>% 
+  filter(ItemYear < 2018) %>% 
+  group_by(ItemYear, CustomerSourceCode) %>% 
+  summarise(Count = n())
+
+as.data.frame(ret_cards_alds)
+
+```
+
+

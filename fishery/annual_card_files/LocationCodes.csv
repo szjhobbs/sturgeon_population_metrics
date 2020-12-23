@@ -1,0 +1,30 @@
+LocationNum,LocationCode,Name
+1,1,Sacramento River: Red Bluff to Colusa (2007-2009)
+2,01A,Sacramento River: Upstream of Red Bluff
+3,01B,Sacramento River: Red Bluff to Hwy 32 bridge
+4,01C,Sacramento River: Hwy 32 bridge to Colusa
+5,2,Sacramento River: Colusa to Knights Landing
+6,3,Sacramento River: Knights Landing to Rio Vista
+7,4,Sacramento River: Rio Vista to Chipps Island
+8,5,Feather River
+9,6,American River
+10,7,Sacramento Deepwater Ship Channel
+11,8,Yolo Bypass
+12,9,Montezuma Slough
+13,10,Napa River
+14,11,Petaluma River
+15,12,San Joaquin River: Upstream of HWY 140 bridge
+16,13,San Joaquin River: HWY 140 bridge to Stockton
+17,14,San Joaquin River: Stockton to Sherman Lake
+18,15,Old River
+19,16,San Pablo Bay
+20,17,Carquinez Strait
+21,18,Suisun Bay
+22,19,Grizzly Bay
+23,20,San Francisco Bay: North of HWY 80
+24,21,San Francisco Bay: South of HWY 80
+25,22,Pacific Ocean: North of Golden Gate Bridge
+26,23,Pacific Ocean: Golden Gate Bridge to Point Sur
+27,24,Pacific Ocean: Point Sur to San Diego
+28,25,Any reservoir or lake
+29,26,Klamath River
